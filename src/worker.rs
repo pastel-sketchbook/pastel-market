@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::thread;
 
 use market_core::domain::{
-    NewsItem, PricePoint, Quote, ScreenerResult, ScannerList,
+    ChartRange, NewsItem, PricePoint, Quote, ScreenerResult, ScannerList,
 };
 use whispers::WhisperResult;
 use yahoo_provider::QuoteProvider;
@@ -36,6 +36,12 @@ pub enum FetchResult {
     },
     /// Sparkline data for the selected symbol.
     Sparkline {
+        points: Vec<PricePoint>,
+    },
+    /// Chart data for the performance chart overlay.
+    Chart {
+        symbol: String,
+        range: ChartRange,
         points: Vec<PricePoint>,
     },
     /// News headlines.
@@ -167,17 +173,37 @@ impl Worker {
         });
     }
 
-    /// Fetch sparkline data for a symbol in the background.
+    /// Fetch sparkline data for a symbol in the background (1D/5m).
     pub fn submit_sparkline(&self, symbol: String) {
         let tx = self.tx.clone();
         let client = Arc::clone(&self.client);
         thread::spawn(move || {
-            let result = match client.fetch_sparkline(&symbol) {
+            let result = match client.fetch_sparkline(&symbol, ChartRange::Day1) {
                 Ok(points) => FetchResult::Sparkline {
                     points,
                 },
                 Err(_) => FetchResult::Sparkline {
                     points: Vec::new(),
+                },
+            };
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Fetch chart data for a symbol with a specific range in the background.
+    pub fn submit_chart(&self, symbol: String, range: ChartRange) {
+        let tx = self.tx.clone();
+        let client = Arc::clone(&self.client);
+        thread::spawn(move || {
+            let result = match client.fetch_sparkline(&symbol, range) {
+                Ok(points) => FetchResult::Chart {
+                    symbol,
+                    range,
+                    points,
+                },
+                Err(e) => FetchResult::Error {
+                    context: "chart",
+                    message: e.to_string(),
                 },
             };
             let _ = tx.send(result);

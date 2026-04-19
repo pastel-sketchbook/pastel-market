@@ -48,10 +48,100 @@ impl fmt::Display for Quote {
     }
 }
 
-/// A price point for sparkline history.
+/// A price point for sparkline / chart history.
 #[derive(Debug, Clone)]
 pub struct PricePoint {
+    /// Unix timestamp (seconds since epoch). `None` for legacy sparkline data.
+    pub timestamp: Option<i64>,
     pub close: f64,
+}
+
+// ---------------------------------------------------------------------------
+// Chart range
+// ---------------------------------------------------------------------------
+
+/// Selectable time range for the performance chart.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ChartRange {
+    #[default]
+    Day1,
+    Day5,
+    Month1,
+    Month3,
+    Month6,
+    Ytd,
+    Year1,
+    Year5,
+}
+
+impl ChartRange {
+    /// Yahoo Finance `range` query parameter value.
+    #[must_use]
+    pub fn yahoo_range(self) -> &'static str {
+        match self {
+            Self::Day1 => "1d",
+            Self::Day5 => "5d",
+            Self::Month1 => "1mo",
+            Self::Month3 => "3mo",
+            Self::Month6 => "6mo",
+            Self::Ytd => "ytd",
+            Self::Year1 => "1y",
+            Self::Year5 => "5y",
+        }
+    }
+
+    /// Yahoo Finance `interval` appropriate for this range.
+    #[must_use]
+    pub fn yahoo_interval(self) -> &'static str {
+        match self {
+            Self::Day1 => "5m",
+            Self::Day5 => "15m",
+            Self::Month1 | Self::Month3 | Self::Month6 | Self::Ytd => "1d",
+            Self::Year1 => "1wk",
+            Self::Year5 => "1mo",
+        }
+    }
+
+    /// Short display label for the UI tab bar.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Day1 => "1D",
+            Self::Day5 => "5D",
+            Self::Month1 => "1M",
+            Self::Month3 => "3M",
+            Self::Month6 => "6M",
+            Self::Ytd => "YTD",
+            Self::Year1 => "1Y",
+            Self::Year5 => "5Y",
+        }
+    }
+
+    /// All variants in display order.
+    pub const ALL: [Self; 8] = [
+        Self::Day1,
+        Self::Day5,
+        Self::Month1,
+        Self::Month3,
+        Self::Month6,
+        Self::Ytd,
+        Self::Year1,
+        Self::Year5,
+    ];
+
+    /// Move to the next range.
+    #[must_use]
+    pub fn next(self) -> Self {
+        let idx = Self::ALL.iter().position(|&r| r == self).unwrap_or(0);
+        Self::ALL[(idx + 1) % Self::ALL.len()]
+    }
+
+    /// Move to the previous range.
+    #[must_use]
+    pub fn prev(self) -> Self {
+        let idx = Self::ALL.iter().position(|&r| r == self).unwrap_or(0);
+        Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
 }
 
 /// A single news headline for a stock symbol.
@@ -906,5 +996,35 @@ mod tests {
         let data = mock::load_mock_data().unwrap();
         assert!(!data.finviz_filters.display_items.is_empty());
         assert!(!data.qc_checklist.items.is_empty());
+    }
+
+    // -- ChartRange -----------------------------------------------------------
+
+    #[test]
+    fn chart_range_next_cycles() {
+        let r = ChartRange::Day1;
+        assert_eq!(r.next(), ChartRange::Day5);
+        assert_eq!(ChartRange::Year5.next(), ChartRange::Day1);
+    }
+
+    #[test]
+    fn chart_range_prev_cycles() {
+        assert_eq!(ChartRange::Day1.prev(), ChartRange::Year5);
+        assert_eq!(ChartRange::Day5.prev(), ChartRange::Day1);
+    }
+
+    #[test]
+    fn chart_range_yahoo_params() {
+        assert_eq!(ChartRange::Day1.yahoo_range(), "1d");
+        assert_eq!(ChartRange::Day1.yahoo_interval(), "5m");
+        assert_eq!(ChartRange::Year1.yahoo_range(), "1y");
+        assert_eq!(ChartRange::Year1.yahoo_interval(), "1wk");
+    }
+
+    #[test]
+    fn chart_range_labels() {
+        assert_eq!(ChartRange::Day1.label(), "1D");
+        assert_eq!(ChartRange::Ytd.label(), "YTD");
+        assert_eq!(ChartRange::ALL.len(), 8);
     }
 }

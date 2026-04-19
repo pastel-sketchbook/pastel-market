@@ -25,19 +25,31 @@ pub fn parse_quotes_response(body: &serde_json::Value, symbols: &[String]) -> Ve
     symbols.iter().map(|s| map.remove(s)).collect()
 }
 
-/// Extract intraday price points from the Yahoo Finance v8 spark response.
+/// Extract price points from the Yahoo Finance v8 spark response.
 ///
-/// Null close values (pre-market gaps) are silently skipped.
+/// Pairs timestamps with close values. Null close values (pre-market gaps)
+/// are silently skipped.
 #[must_use]
 pub fn parse_sparkline_response(body: &serde_json::Value) -> Vec<PricePoint> {
-    let closes = body["spark"]["result"][0]["response"][0]["indicators"]["quote"][0]["close"]
+    let result = &body["spark"]["result"][0]["response"][0];
+    let timestamps = result["timestamp"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let closes = result["indicators"]["quote"][0]["close"]
         .as_array()
         .cloned()
         .unwrap_or_default();
 
-    closes
+    timestamps
         .iter()
-        .filter_map(|v| v.as_f64().map(|close| PricePoint { close }))
+        .zip(closes.iter())
+        .filter_map(|(t, c)| {
+            c.as_f64().map(|close| PricePoint {
+                timestamp: t.as_i64(),
+                close,
+            })
+        })
         .collect()
 }
 
@@ -254,8 +266,11 @@ mod tests {
     // --- parse_sparkline_response ---
 
     fn make_v8_body(closes: &[serde_json::Value]) -> serde_json::Value {
+        let timestamps: Vec<serde_json::Value> = (0..closes.len())
+            .map(|i| serde_json::json!(1_700_000_000 + (i as i64) * 300))
+            .collect();
         serde_json::json!({
-            "spark": { "result": [{ "response": [{ "indicators": { "quote": [{ "close": closes }] } }] }] }
+            "spark": { "result": [{ "response": [{ "timestamp": timestamps, "indicators": { "quote": [{ "close": closes }] } }] }] }
         })
     }
 
@@ -269,6 +284,7 @@ mod tests {
         let points = parse_sparkline_response(&body);
         assert_eq!(points.len(), 3);
         assert!((points[0].close - 100.0).abs() < f64::EPSILON);
+        assert!(points[0].timestamp.is_some());
     }
 
     #[test]

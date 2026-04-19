@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use tracing::info;
 
-use market_core::domain::{NewsItem, PricePoint, Quote};
+use market_core::domain::{ChartRange, NewsItem, PricePoint, Quote};
 use market_core::http::call_with_retry;
 
 use crate::quotes;
@@ -45,13 +45,13 @@ pub trait QuoteProvider: Send + Sync {
     /// unparsable data.
     fn fetch_quotes(&self, symbols: &[String]) -> Result<Vec<Option<Quote>>>;
 
-    /// Fetch intraday sparkline data for a single symbol.
+    /// Fetch sparkline / chart data for a single symbol over the given range.
     ///
     /// # Errors
     ///
     /// Returns an error if the data source is unreachable or returns
     /// unparsable data.
-    fn fetch_sparkline(&self, symbol: &str) -> Result<Vec<PricePoint>>;
+    fn fetch_sparkline(&self, symbol: &str, range: ChartRange) -> Result<Vec<PricePoint>>;
 
     /// Fetch a Yahoo predefined screener list (e.g. `"day_gainers"`).
     ///
@@ -190,7 +190,7 @@ impl QuoteProvider for YahooClient {
         Ok(quotes::parse_quotes_response(&json, symbols))
     }
 
-    fn fetch_sparkline(&self, symbol: &str) -> Result<Vec<PricePoint>> {
+    fn fetch_sparkline(&self, symbol: &str, range: ChartRange) -> Result<Vec<PricePoint>> {
         let agent = self.agent.clone();
         let crumb = self.crumb.clone();
         let sym = symbol.to_string();
@@ -201,8 +201,8 @@ impl QuoteProvider for YahooClient {
                 .header("User-Agent", YAHOO_UA)
                 .query("symbols", &sym)
                 .query("crumb", &crumb)
-                .query("range", "1d")
-                .query("interval", "5m")
+                .query("range", range.yahoo_range())
+                .query("interval", range.yahoo_interval())
         })
         .context("Yahoo Finance spark request failed")?;
 
@@ -291,7 +291,7 @@ mod tests {
         fn fetch_quotes(&self, _symbols: &[String]) -> Result<Vec<Option<Quote>>> {
             Ok(vec![])
         }
-        fn fetch_sparkline(&self, _symbol: &str) -> Result<Vec<PricePoint>> {
+        fn fetch_sparkline(&self, _symbol: &str, _range: ChartRange) -> Result<Vec<PricePoint>> {
             Ok(vec![])
         }
     }
@@ -324,7 +324,7 @@ mod tests {
     #[test]
     fn stub_provider_fetch_sparkline_returns_empty() {
         let p = StubProvider;
-        let result = p.fetch_sparkline("AAPL").expect("should succeed");
+        let result = p.fetch_sparkline("AAPL", ChartRange::Day1).expect("should succeed");
         assert!(result.is_empty());
     }
 }

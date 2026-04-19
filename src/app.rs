@@ -10,8 +10,8 @@ use tracing::{info, warn};
 use market_core::config::{self, Preferences, QcSession, Session};
 use market_core::domain::mock::MockData;
 use market_core::domain::{
-    FilterMode, MarketStatus, NewsItem, PricePoint, Quote, ScannerList, ScreenerResult, SortMode,
-    TopMovers, ViewMode, Watchlist,
+    ChartRange, FilterMode, MarketStatus, NewsItem, PricePoint, Quote, ScannerList,
+    ScreenerResult, SortMode, TopMovers, ViewMode, Watchlist,
 };
 use market_core::theme::{self, Theme};
 use whispers::WhisperResult;
@@ -120,6 +120,13 @@ pub struct App {
     pub sector_heat: HashMap<String, f64>,
     pub past_beats: HashMap<String, bool>,
 
+    // -- Chart overlay --
+    pub chart_open: bool,
+    pub chart_symbol: String,
+    pub chart_range: ChartRange,
+    pub chart_data: Vec<PricePoint>,
+    pub chart_loading: bool,
+
     // -- Theme --
     pub theme_index: usize,
 
@@ -202,6 +209,11 @@ impl App {
             insider_ownership: HashMap::new(),
             sector_heat: HashMap::new(),
             past_beats: HashMap::new(),
+            chart_open: false,
+            chart_symbol: String::new(),
+            chart_range: ChartRange::default(),
+            chart_data: Vec::new(),
+            chart_loading: false,
             theme_index,
             tick: 0,
             ticks_since_refresh: 0,
@@ -248,6 +260,11 @@ impl App {
             insider_ownership: HashMap::new(),
             sector_heat: HashMap::new(),
             past_beats: HashMap::new(),
+            chart_open: false,
+            chart_symbol: String::new(),
+            chart_range: ChartRange::default(),
+            chart_data: Vec::new(),
+            chart_loading: false,
             theme_index: 0,
             tick: 0,
             ticks_since_refresh: 0,
@@ -523,6 +540,20 @@ impl App {
                 FetchResult::Sparkline { points } => {
                     self.sparkline_data = points;
                 }
+                FetchResult::Chart {
+                    symbol,
+                    range,
+                    points,
+                } => {
+                    // Only apply if the chart is still open for this symbol+range.
+                    if self.chart_open
+                        && self.chart_symbol == symbol
+                        && self.chart_range == range
+                    {
+                        self.chart_data = points;
+                        self.chart_loading = false;
+                    }
+                }
                 FetchResult::News { items } => {
                     self.news_headlines = items;
                 }
@@ -591,6 +622,12 @@ impl App {
             return;
         }
 
+        // Chart overlay intercepts keys when open.
+        if self.chart_open {
+            self.handle_chart_key(key);
+            return;
+        }
+
         match self.input_mode {
             InputMode::Normal => self.handle_normal_key(key),
             InputMode::Adding => self.handle_adding_key(key),
@@ -655,6 +692,14 @@ impl App {
                 let prev = self.view_mode;
                 self.view_mode = self.view_mode.prev();
                 self.on_view_mode_changed(prev);
+            }
+
+            // Open chart (Enter in Watchlist/Scanner view)
+            KeyCode::Enter
+                if self.view_mode == ViewMode::Watchlist
+                    || self.view_mode == ViewMode::Scanner =>
+            {
+                self.open_chart();
             }
 
             // QC toggle (Space/Enter in QC view)
@@ -770,6 +815,71 @@ impl App {
             KeyCode::Char(c) => {
                 self.input_buffer.push(c);
             }
+            _ => {}
+        }
+    }
+
+    // -- Chart overlay -------------------------------------------------------
+
+    /// Open the performance chart for the currently selected stock.
+    fn open_chart(&mut self) {
+        let symbol = match self.view_mode {
+            ViewMode::Watchlist | ViewMode::Scanner => {
+                self.watchlist.selected_quote().map(|q| q.symbol.clone())
+            }
+            ViewMode::QualityControl => self.selected_screener_ticker(),
+        };
+        let Some(sym) = symbol else { return };
+
+        self.chart_open = true;
+        self.chart_symbol.clone_from(&sym);
+        self.chart_range = ChartRange::default();
+        self.chart_data.clear();
+        self.chart_loading = true;
+
+        if let Some(worker) = &self.worker {
+            worker.submit_chart(sym, self.chart_range);
+        }
+    }
+
+    /// Close the chart overlay.
+    fn close_chart(&mut self) {
+        self.chart_open = false;
+        self.chart_data.clear();
+        self.chart_loading = false;
+    }
+
+    /// Switch the chart to a different time range.
+    fn switch_chart_range(&mut self, range: ChartRange) {
+        if range == self.chart_range {
+            return;
+        }
+        self.chart_range = range;
+        self.chart_data.clear();
+        self.chart_loading = true;
+
+        if let Some(worker) = &self.worker {
+            worker.submit_chart(self.chart_symbol.clone(), range);
+        }
+    }
+
+    fn handle_chart_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => self.close_chart(),
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
+                self.switch_chart_range(self.chart_range.next());
+            }
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => {
+                self.switch_chart_range(self.chart_range.prev());
+            }
+            KeyCode::Char('1') => self.switch_chart_range(ChartRange::Day1),
+            KeyCode::Char('2') => self.switch_chart_range(ChartRange::Day5),
+            KeyCode::Char('3') => self.switch_chart_range(ChartRange::Month1),
+            KeyCode::Char('4') => self.switch_chart_range(ChartRange::Month3),
+            KeyCode::Char('5') => self.switch_chart_range(ChartRange::Month6),
+            KeyCode::Char('6') => self.switch_chart_range(ChartRange::Ytd),
+            KeyCode::Char('7') => self.switch_chart_range(ChartRange::Year1),
+            KeyCode::Char('8') => self.switch_chart_range(ChartRange::Year5),
             _ => {}
         }
     }
@@ -941,7 +1051,7 @@ mod tests {
                         fifty_two_week_low: 310.0,
                     }),
                 ],
-                sparkline: vec![PricePoint { close: 173.0 }, PricePoint { close: 175.0 }],
+                sparkline: vec![PricePoint { timestamp: None, close: 173.0 }, PricePoint { timestamp: None, close: 175.0 }],
                 news: vec![NewsItem {
                     title: "Test headline".to_string(),
                     publisher: "Test".to_string(),
@@ -974,7 +1084,7 @@ mod tests {
                 .collect())
         }
 
-        fn fetch_sparkline(&self, _symbol: &str) -> Result<Vec<PricePoint>> {
+        fn fetch_sparkline(&self, _symbol: &str, _range: ChartRange) -> Result<Vec<PricePoint>> {
             Ok(self.sparkline.clone())
         }
 
@@ -1002,7 +1112,7 @@ mod tests {
         fn fetch_quotes(&self, _symbols: &[String]) -> Result<Vec<Option<Quote>>> {
             bail!("connection refused")
         }
-        fn fetch_sparkline(&self, _symbol: &str) -> Result<Vec<PricePoint>> {
+        fn fetch_sparkline(&self, _symbol: &str, _range: ChartRange) -> Result<Vec<PricePoint>> {
             bail!("connection refused")
         }
     }
@@ -1388,5 +1498,67 @@ mod tests {
             app.handle_key(key(KeyCode::Char('j')));
         }
         assert_eq!(app.selected_qc, 0); // wrapped
+    }
+
+    // -- Chart overlay --------------------------------------------------------
+
+    #[test]
+    fn enter_opens_chart_in_watchlist_view() {
+        let mut app = make_app(&["AAPL", "MSFT"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.chart_open);
+        assert_eq!(app.chart_symbol, "AAPL");
+        assert_eq!(app.chart_range, ChartRange::Day1);
+    }
+
+    #[test]
+    fn esc_closes_chart() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.chart_open);
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.chart_open);
+    }
+
+    #[test]
+    fn chart_range_switches_with_number_keys() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        app.handle_key(key(KeyCode::Char('3')));
+        assert_eq!(app.chart_range, ChartRange::Month1);
+    }
+
+    #[test]
+    fn chart_range_cycles_with_right_left() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.chart_range, ChartRange::Day1);
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.chart_range, ChartRange::Day5);
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.chart_range, ChartRange::Day1);
+    }
+
+    #[test]
+    fn chart_keys_dont_leak_to_normal_mode() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        // 'q' in chart mode should close chart, not quit app
+        app.handle_key(key(KeyCode::Char('q')));
+        assert!(!app.chart_open);
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn enter_does_nothing_without_quotes() {
+        let mut app = make_app(&["AAPL"]);
+        // No refresh — no quotes loaded
+        app.handle_key(key(KeyCode::Enter));
+        assert!(!app.chart_open);
     }
 }

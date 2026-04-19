@@ -1,5 +1,6 @@
 //! UI rendering — dispatches to per-panel modules based on view mode.
 
+mod chart;
 mod detail;
 mod footer;
 mod header;
@@ -46,6 +47,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     match app.view_mode {
         ViewMode::Watchlist | ViewMode::Scanner => draw_market_layout(frame, app),
         ViewMode::QualityControl => draw_qc_layout(frame, app),
+    }
+
+    // Chart overlay on top of everything.
+    if app.chart_open {
+        chart::draw_chart_overlay(frame, app, theme);
     }
 }
 

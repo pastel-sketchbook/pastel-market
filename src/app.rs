@@ -417,6 +417,7 @@ impl App {
                 Ok(syms) if !syms.is_empty() => match client.fetch_quotes(&syms) {
                     Ok(quotes) => {
                         self.scanner_quotes = quotes.into_iter().flatten().collect();
+                        self.update_top_movers_from_scanner();
                     }
                     Err(e) => {
                         warn!(error = %e, "trending hydrate failed");
@@ -438,6 +439,7 @@ impl App {
                         .map(finviz_scraper::screener::screener_result_to_quote)
                         .collect();
                     self.screener_results = results;
+                    self.update_top_movers_from_scanner();
                 }
                 Err(e) => {
                     warn!(error = %e, "finviz fetch failed");
@@ -445,7 +447,10 @@ impl App {
                 }
             },
             _ => match client.fetch_screener(self.scanner_list.screener_id()) {
-                Ok(quotes) => self.scanner_quotes = quotes,
+                Ok(quotes) => {
+                    self.scanner_quotes = quotes;
+                    self.update_top_movers_from_scanner();
+                }
                 Err(e) => {
                     warn!(error = %e, "screener fetch failed");
                     self.scanner_quotes.clear();
@@ -464,6 +469,81 @@ impl App {
             }
         } else {
             self.sparkline_data.clear();
+        }
+    }
+
+    /// Update top movers from scanner quotes (when scanner has fresh data).
+    fn update_top_movers_from_scanner(&mut self) {
+        if !self.scanner_quotes.is_empty() {
+            let as_options: Vec<Option<Quote>> =
+                self.scanner_quotes.iter().cloned().map(Some).collect();
+            self.top_movers = TopMovers::from_quotes(&as_options, 3);
+        }
+    }
+
+    /// Fetch QC-specific data for the selected screener stock:
+    /// insider ownership, sector heat, whisper data, and historical beats.
+    fn refresh_qc_data(&mut self) {
+        let Some(ticker) = self.selected_screener_ticker() else {
+            return;
+        };
+
+        // Insider ownership
+        if !self.insider_ownership.contains_key(&ticker) {
+            match finviz_scraper::detail::fetch_insider_ownership(&ticker) {
+                Ok(pct) => {
+                    self.insider_ownership.insert(ticker.clone(), pct);
+                }
+                Err(e) => {
+                    warn!(error = %e, ticker = %ticker, "insider ownership fetch failed");
+                }
+            }
+        }
+
+        // Sector heat (needs sectors from screener results)
+        if self.sector_heat.is_empty() {
+            let sectors: Vec<String> = self
+                .screener_results
+                .iter()
+                .map(|r| r.sector.clone())
+                .collect();
+            if !sectors.is_empty() {
+                self.sector_heat = finviz_scraper::sector::fetch_sector_heat(&sectors);
+            }
+        }
+
+        // Whisper data
+        if !self.whisper_cache.contains_key(&ticker) {
+            match whispers::fetch(&ticker) {
+                Ok(w) => {
+                    // Extract past_beats from whisper result
+                    if let Some(beats) = w.past_beats {
+                        self.past_beats.insert(ticker.clone(), beats);
+                    }
+                    self.whisper_cache.insert(ticker.clone(), w);
+                }
+                Err(e) => {
+                    warn!(error = %e, ticker = %ticker, "whisper fetch failed");
+                }
+            }
+        }
+    }
+
+    /// Fetch the quote for the most recently added symbol (last in the list).
+    fn refresh_added_symbol(&mut self) {
+        let Some(client) = &self.client else { return };
+        let symbols = self.watchlist.symbols();
+        let Some(sym) = symbols.last() else { return };
+        match client.fetch_quotes(std::slice::from_ref(sym)) {
+            Ok(mut quotes) => {
+                if let Some(q) = quotes.pop() {
+                    let idx = symbols.len() - 1;
+                    self.watchlist.set_quote(idx, q);
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, "failed to fetch added symbol quote");
+            }
         }
     }
 
@@ -605,7 +685,12 @@ impl App {
             }
 
             // Refresh
-            KeyCode::Char('r') => self.refresh_quotes(),
+            KeyCode::Char('r') => {
+                self.refresh_quotes();
+                if self.view_mode == ViewMode::QualityControl {
+                    self.refresh_qc_data();
+                }
+            }
 
             // Sort & Filter
             KeyCode::Char('s') => {
@@ -658,6 +743,16 @@ impl App {
             _ => {}
         }
 
+        // Refresh sparkline and news on navigation when focused on table.
+        if matches!(self.focus, Focus::Table)
+            && matches!(
+                key.code,
+                KeyCode::Char('j' | 'k') | KeyCode::Down | KeyCode::Up
+            )
+        {
+            self.refresh_sparkline();
+        }
+
         // Refresh news on navigation when visible.
         if self.show_news
             && matches!(
@@ -679,6 +774,7 @@ impl App {
                 if !self.input_buffer.is_empty() {
                     self.watchlist.add_symbol(&self.input_buffer);
                     self.persist_session();
+                    self.refresh_added_symbol();
                 }
                 self.input_mode = InputMode::Normal;
                 self.input_buffer.clear();

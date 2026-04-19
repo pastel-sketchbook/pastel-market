@@ -163,6 +163,13 @@ impl Watchlist {
         self.quotes = quotes;
     }
 
+    /// Set the quote for a single symbol by index.
+    pub fn set_quote(&mut self, index: usize, quote: Option<Quote>) {
+        if index < self.quotes.len() {
+            self.quotes[index] = quote;
+        }
+    }
+
     /// Returns `true` when the watchlist has no symbols.
     #[must_use]
     pub fn is_empty(&self) -> bool {

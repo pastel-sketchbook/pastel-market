@@ -12,7 +12,9 @@ use super::helpers::{active_color, highlight_style, stripe_style};
 
 /// Render the 3-column middle section: Finviz filters | Whispers | QC checklist.
 pub fn draw_qc_middle(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
-    let title_style = Style::default().fg(theme.fg).add_modifier(Modifier::BOLD);
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
 
     let mid_chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -174,7 +176,9 @@ fn draw_qc_checklist(frame: &mut Frame, app: &App, theme: &Theme, title_style: S
 pub fn draw_screener_table(frame: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
     let any_passed = app.any_fully_passed();
     let ac = active_color(any_passed, theme);
-    let title_style = Style::default().fg(theme.fg).add_modifier(Modifier::BOLD);
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
 
     let border_color = if app.focus == Focus::Table {
         ac

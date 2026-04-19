@@ -45,11 +45,16 @@ pub fn draw_detail(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
         vec![Line::from("No symbol selected")]
     };
 
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+
     let detail = Paragraph::new(content).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border))
-            .title(" Details "),
+            .title(" Details ")
+            .title_style(title_style),
     );
 
     frame.render_widget(detail, area);
@@ -64,6 +69,10 @@ pub fn draw_top_movers(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) 
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+
     let gainer_lines: Vec<Line> = movers
         .gainers
         .iter()
@@ -74,7 +83,8 @@ pub fn draw_top_movers(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) 
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border))
-            .title(" \u{25b2} Gainers "),
+            .title(" \u{25b2} Gainers ")
+            .title_style(title_style),
     );
     frame.render_widget(gainers_block, columns[0]);
 
@@ -88,7 +98,8 @@ pub fn draw_top_movers(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) 
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border))
-            .title(" \u{25bc} Losers "),
+            .title(" \u{25bc} Losers ")
+            .title_style(title_style),
     );
     frame.render_widget(losers_block, columns[1]);
 }
@@ -128,11 +139,16 @@ pub fn draw_news_panel(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) 
             .collect()
     };
 
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+
     let panel = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border))
-            .title(title),
+            .title(title)
+            .title_style(title_style),
     );
 
     frame.render_widget(panel, area);

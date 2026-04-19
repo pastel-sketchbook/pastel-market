@@ -175,11 +175,16 @@ pub fn draw_sector_row(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) 
         spans.push(Span::raw(" "));
     }
 
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+
     let row = Paragraph::new(Line::from(spans)).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border))
-            .title(" Sectors "),
+            .title(" Sectors ")
+            .title_style(title_style),
     );
 
     frame.render_widget(row, area);

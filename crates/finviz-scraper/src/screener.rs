@@ -175,6 +175,7 @@ pub fn screener_result_to_quote(sr: &ScreenerResult) -> Quote {
     Quote {
         symbol: sr.ticker.clone(),
         short_name: Some(sr.company.clone()),
+        sector: Some(sr.sector.clone()),
         market_state: Some("REGULAR".to_string()),
         regular_market_price: price,
         regular_market_change: change_abs,

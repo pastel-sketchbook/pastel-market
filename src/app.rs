@@ -830,6 +830,7 @@ mod tests {
                     Some(Quote {
                         symbol: "AAPL".to_string(),
                         short_name: Some("Apple Inc.".to_string()),
+                        sector: Some("Technology".to_string()),
                         market_state: Some("REGULAR".to_string()),
                         regular_market_price: 175.0,
                         regular_market_change: 2.0,
@@ -845,6 +846,7 @@ mod tests {
                     Some(Quote {
                         symbol: "MSFT".to_string(),
                         short_name: Some("Microsoft Corp.".to_string()),
+                        sector: Some("Technology".to_string()),
                         market_state: Some("REGULAR".to_string()),
                         regular_market_price: 400.0,
                         regular_market_change: -3.0,

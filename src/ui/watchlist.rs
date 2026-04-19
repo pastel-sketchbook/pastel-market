@@ -14,9 +14,10 @@ use super::helpers::{
 };
 
 /// Column widths shared between watchlist and scanner tables.
-pub const TABLE_WIDTHS: [Constraint; 6] = [
+pub const TABLE_WIDTHS: [Constraint; 7] = [
     Constraint::Length(8),
-    Constraint::Min(16),
+    Constraint::Min(14),
+    Constraint::Length(14),
     Constraint::Length(10),
     Constraint::Length(10),
     Constraint::Length(10),
@@ -28,6 +29,7 @@ pub fn table_header(theme: &Theme) -> Row<'static> {
     Row::new(vec![
         Cell::from("Symbol"),
         Cell::from("Name"),
+        Cell::from("Sector"),
         Cell::from("Price"),
         Cell::from("Change"),
         Cell::from("Change%"),
@@ -64,6 +66,7 @@ pub fn build_quote_row<'a>(
         Row::new(vec![
             Cell::from(q.symbol.clone()),
             Cell::from(q.display_name().to_string()),
+            Cell::from(q.sector.clone().unwrap_or_default()),
             Cell::from(format!("{:.2}", q.regular_market_price)),
             Cell::from(format!("{:+.2}", q.regular_market_change)).style(change_style),
             Cell::from(format_change_cell(q.regular_market_change_percent, rank))
@@ -78,6 +81,7 @@ pub fn build_quote_row<'a>(
             Cell::from("--"),
             Cell::from("--"),
             Cell::from("--"),
+            Cell::from("--"),
         ])
     }
 }
@@ -86,6 +90,7 @@ pub fn build_quote_row<'a>(
 pub fn empty_state_row(message: &str, theme: &Theme) -> Row<'static> {
     Row::new(vec![
         Cell::from(message.to_string()).style(Style::default().fg(theme.muted)),
+        Cell::from(""),
         Cell::from(""),
         Cell::from(""),
         Cell::from(""),
@@ -150,13 +155,18 @@ pub fn draw_watchlist_table(frame: &mut Frame, app: &App, theme: &Theme, area: R
         format!(" <{}>", app.filter_mode)
     };
 
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+
     let table = Table::new(rows, TABLE_WIDTHS)
         .header(header)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme.border))
-                .title(format!(" Watchlist{sort_label}{filter_label} ")),
+                .title(format!(" Watchlist{sort_label}{filter_label} "))
+                .title_style(title_style),
         )
         .row_highlight_style(highlight_style(theme));
 

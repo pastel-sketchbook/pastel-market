@@ -100,6 +100,7 @@ pub fn parse_quote(value: &serde_json::Value) -> Option<Quote> {
     Some(Quote {
         symbol: symbol.to_string(),
         short_name: value["shortName"].as_str().map(String::from),
+        sector: value["sector"].as_str().map(String::from),
         market_state: value["marketState"].as_str().map(String::from),
         regular_market_price: value["regularMarketPrice"].as_f64().unwrap_or(0.0),
         regular_market_change: value["regularMarketChange"].as_f64().unwrap_or(0.0),

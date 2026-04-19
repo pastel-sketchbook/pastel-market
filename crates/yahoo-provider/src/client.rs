@@ -174,7 +174,7 @@ impl QuoteProvider for YahooClient {
                 .query("crumb", &crumb)
                 .query(
                     "fields",
-                    "symbol,shortName,marketState,regularMarketPrice,regularMarketChange,\
+                    "symbol,shortName,sector,marketState,regularMarketPrice,regularMarketChange,\
                      regularMarketChangePercent,regularMarketVolume,\
                      regularMarketPreviousClose,regularMarketOpen,\
                      regularMarketDayHigh,regularMarketDayLow,\

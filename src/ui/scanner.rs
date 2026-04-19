@@ -2,7 +2,7 @@
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Table};
 
 use crate::app::App;
@@ -38,12 +38,16 @@ pub fn draw_scanner_table(frame: &mut Frame, app: &App, theme: &Theme, area: Rec
     };
 
     let title = format!(" Scanner: {} ", app.scanner_list);
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
 
     let table = Table::new(rows, TABLE_WIDTHS).header(header).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border))
-            .title(title),
+            .title(title)
+            .title_style(title_style),
     );
 
     frame.render_widget(table, area);

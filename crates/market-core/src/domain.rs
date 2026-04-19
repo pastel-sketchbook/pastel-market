@@ -7,6 +7,7 @@ use serde::Deserialize;
 pub struct Quote {
     pub symbol: String,
     pub short_name: Option<String>,
+    pub sector: Option<String>,
     pub market_state: Option<String>,
     pub regular_market_price: f64,
     pub regular_market_change: f64,
@@ -695,6 +696,7 @@ mod tests {
         Quote {
             symbol: symbol.to_string(),
             short_name: Some(format!("{symbol} Inc.")),
+            sector: Some("Technology".to_string()),
             market_state: Some("REGULAR".to_string()),
             regular_market_price: price,
             regular_market_change: change,

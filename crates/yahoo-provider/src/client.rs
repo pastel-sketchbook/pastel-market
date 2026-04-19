@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 use tracing::info;
 
 use market_core::domain::{NewsItem, PricePoint, Quote};
-use market_core::http::{USER_AGENT, call_with_retry};
+use market_core::http::call_with_retry;
 
 use crate::quotes;
 
@@ -25,6 +25,10 @@ const SEARCH_URL: &str = "https://query2.finance.yahoo.com/v1/finance/search";
 
 /// Per-request timeout — prevents UI freezes on unresponsive endpoints.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Browser-like User-Agent — Yahoo Finance blocks non-browser agents.
+const YAHOO_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 /// Abstraction over a stock-quote data source.
 ///
@@ -110,25 +114,38 @@ impl YahooClient {
         // The 404 response is expected — we only need the Set-Cookie header.
         let _ignore = agent
             .get(COOKIE_URL)
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", YAHOO_UA)
             .call();
 
-        // Fetch the crumb token using the session cookie.
-        let mut crumb_response = agent
-            .get(CRUMB_URL)
-            .header("User-Agent", USER_AGENT)
-            .call()
-            .context("failed to fetch Yahoo Finance crumb")?;
+        // Fetch the crumb token using the session cookie (with retry for 429).
+        let mut crumb = String::new();
+        for attempt in 0..3_u32 {
+            if attempt > 0 {
+                let delay = Duration::from_millis(1000 * u64::from(2_u32.pow(attempt - 1)));
+                std::thread::sleep(delay);
+            }
 
-        let status = crumb_response.status().as_u16();
-        if status != 200 {
-            bail!("Yahoo Finance crumb endpoint returned HTTP {status}");
+            let mut resp = agent
+                .get(CRUMB_URL)
+                .header("User-Agent", YAHOO_UA)
+                .call()
+                .context("failed to fetch Yahoo Finance crumb")?;
+
+            let status = resp.status().as_u16();
+            if status == 429 {
+                tracing::warn!(attempt = attempt + 1, "crumb rate-limited, retrying");
+                continue;
+            }
+            if status != 200 {
+                bail!("Yahoo Finance crumb endpoint returned HTTP {status}");
+            }
+
+            crumb = resp
+                .body_mut()
+                .read_to_string()
+                .context("failed to read crumb response body")?;
+            break;
         }
-
-        let crumb = crumb_response
-            .body_mut()
-            .read_to_string()
-            .context("failed to read crumb response body")?;
 
         if crumb.is_empty() {
             bail!("Yahoo Finance returned an empty crumb");
@@ -152,7 +169,7 @@ impl QuoteProvider for YahooClient {
         let mut body = call_with_retry(|| {
             agent
                 .get(QUOTE_URL)
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", YAHOO_UA)
                 .query("symbols", &joined)
                 .query("crumb", &crumb)
                 .query(
@@ -181,7 +198,7 @@ impl QuoteProvider for YahooClient {
         let mut body = call_with_retry(|| {
             agent
                 .get(SPARK_URL)
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", YAHOO_UA)
                 .query("symbols", &sym)
                 .query("crumb", &crumb)
                 .query("range", "1d")
@@ -204,7 +221,7 @@ impl QuoteProvider for YahooClient {
         let mut body = call_with_retry(|| {
             agent
                 .get(SCREENER_URL)
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", YAHOO_UA)
                 .query("scrIds", &id)
                 .query("count", "25")
                 .query("crumb", &crumb)
@@ -225,7 +242,7 @@ impl QuoteProvider for YahooClient {
         let mut body = call_with_retry(|| {
             agent
                 .get(TRENDING_URL)
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", YAHOO_UA)
                 .query("count", "25")
                 .query("crumb", &crumb)
         })
@@ -246,7 +263,7 @@ impl QuoteProvider for YahooClient {
         let mut body = call_with_retry(|| {
             agent
                 .get(SEARCH_URL)
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", YAHOO_UA)
                 .query("q", &sym)
                 .query("newsCount", "10")
                 .query("quotesCount", "0")

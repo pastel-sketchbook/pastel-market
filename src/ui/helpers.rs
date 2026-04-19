@@ -35,30 +35,6 @@ pub fn render_size_guard(frame: &mut Frame, theme: &Theme) -> bool {
     true
 }
 
-/// Format a price with commas (e.g. `1,234.56`).
-#[must_use]
-pub fn format_price(price: f64) -> String {
-    #[allow(clippy::cast_possible_truncation)]
-    let integer = price.trunc() as i64;
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let frac = ((price.fract().abs()) * 100.0).round() as u64;
-    let int_str = format_integer_with_commas(integer);
-    format!("{int_str}.{frac:02}")
-}
-
-fn format_integer_with_commas(n: i64) -> String {
-    let s = n.abs().to_string();
-    let sign = if n < 0 { "-" } else { "" };
-    let mut result = String::new();
-    for (i, ch) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            result.push(',');
-        }
-        result.push(ch);
-    }
-    format!("{sign}{}", result.chars().rev().collect::<String>())
-}
-
 /// Format volume with K/M/B suffixes.
 #[must_use]
 #[allow(clippy::cast_precision_loss)]

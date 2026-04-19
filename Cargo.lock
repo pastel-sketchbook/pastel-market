@@ -634,7 +634,7 @@ checksum = "9844ddc3a6e533d62bba727eb6c28b5d360921d5175e9ff0f1e621a5c590a4d5"
 
 [[package]]
 name = "finviz-scraper"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "market-core",
@@ -1133,7 +1133,7 @@ dependencies = [
 
 [[package]]
 name = "market-core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1336,7 +1336,7 @@ dependencies = [
 
 [[package]]
 name = "pastel-market"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2837,7 +2837,7 @@ dependencies = [
 
 [[package]]
 name = "whispers"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "headless_chrome",
@@ -3136,7 +3136,7 @@ checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "yahoo-provider"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "market-core",

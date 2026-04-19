@@ -10,7 +10,7 @@ use crate::app::{App, INDEX_SYMBOLS, SECTOR_SYMBOLS};
 use market_core::domain::{MarketStatus, Quote};
 use market_core::theme::Theme;
 
-use super::helpers::{active_color, format_price};
+use super::helpers::active_color;
 
 /// Pastel palette for the title letters.
 const PASTEL_PALETTE: [Color; 12] = [
@@ -96,7 +96,7 @@ pub fn draw_header(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
         .split(inner);
 
     // Left: title + conviction status.
@@ -129,6 +129,19 @@ pub fn draw_header(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     );
 }
 
+/// Format index price compactly (drop decimals for large numbers).
+fn format_compact_price(price: f64) -> String {
+    if price >= 10_000.0 {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let rounded = price.round() as u64;
+        format!("{rounded}")
+    } else if price >= 1_000.0 {
+        format!("{price:.0}")
+    } else {
+        format!("{price:.1}")
+    }
+}
+
 /// Format a single index quote as spans.
 fn format_index_spans<'a>(symbol: &'a str, quote: Option<&Quote>, theme: &Theme) -> Vec<Span<'a>> {
     let label = match symbol {
@@ -142,15 +155,16 @@ fn format_index_spans<'a>(symbol: &'a str, quote: Option<&Quote>, theme: &Theme)
 
     if let Some(q) = quote {
         let color = if q.is_gain() { theme.gain } else { theme.loss };
+        let price = format_compact_price(q.regular_market_price);
         vec![
             Span::styled(
                 label.to_string(),
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
-            Span::raw(format_price(q.regular_market_price)),
+            Span::raw(price),
             Span::styled(
-                format!(" {:+.2}%", q.regular_market_change_percent),
+                format!(" {:+.1}%", q.regular_market_change_percent),
                 Style::default().fg(color),
             ),
         ]

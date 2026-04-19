@@ -89,7 +89,8 @@ pub fn draw_chart_overlay(frame: &mut Frame, app: &App, theme: &'static Theme) {
             .style(Style::default().fg(theme.muted).bg(theme.chart_bg));
         frame.render_widget(loading, inner_layout[1]);
     } else {
-        draw_line_chart(frame, app, theme, inner_layout[1]);
+        let chart_area_padded = inner_layout[1].inner(Margin::new(1, 0));
+        draw_line_chart(frame, app, theme, chart_area_padded);
     }
 
     // Help bar.

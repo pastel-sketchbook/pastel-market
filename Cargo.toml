@@ -45,7 +45,7 @@ headless_chrome = "1.0.21"
 
 [package]
 name = "pastel-market"
-version = "0.3.0"
+version = "0.3.1"
 edition.workspace = true
 rust-version.workspace = true
 
@@ -60,6 +60,7 @@ ratatui.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+chrono.workspace = true
 
 [lints]
 workspace = true

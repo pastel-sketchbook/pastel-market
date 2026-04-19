@@ -8,6 +8,10 @@ fundamental stock screening and earnings intelligence. Built with
 Monitor markets. Screen stocks. Gauge earnings. Inspect quality. Signal conviction. Fast.
 ```
 
+| List View | Chart View |
+|---|---|
+| ![List View](screenshots/pastel-market_1.png) | ![Chart View](screenshots/pastel-market_2.png) |
+
 ## Features
 
 - **Watchlist** — live quotes from Yahoo Finance with sparklines, 52-week

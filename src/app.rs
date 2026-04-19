@@ -972,6 +972,7 @@ impl App {
             KeyCode::Char('6') => self.switch_chart_range(ChartRange::Ytd),
             KeyCode::Char('7') => self.switch_chart_range(ChartRange::Year1),
             KeyCode::Char('8') => self.switch_chart_range(ChartRange::Year5),
+            KeyCode::Char('t') => self.next_theme(),
             _ => {}
         }
     }

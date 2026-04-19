@@ -42,6 +42,8 @@ pub struct Theme {
     pub tag: Color,
     /// Panel interior background.
     pub panel_bg: Color,
+    /// Chart overlay background — subtle shade off `bg`.
+    pub chart_bg: Color,
 }
 
 /// Available themes, indexed by position. First entry is the default.
@@ -68,6 +70,7 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(0, 217, 255),
         tag: Color::Rgb(180, 140, 255),
         panel_bg: Color::Rgb(24, 24, 30),
+        chart_bg: Color::Rgb(18, 18, 24),
     },
     // Gruvbox Dark
     Theme {
@@ -89,6 +92,7 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(250, 189, 47),
         tag: Color::Rgb(131, 165, 152),
         panel_bg: Color::Rgb(37, 36, 36),
+        chart_bg: Color::Rgb(22, 24, 25),
     },
     // Solarized Dark
     Theme {
@@ -110,8 +114,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(181, 137, 0),
         tag: Color::Rgb(108, 113, 196),
         panel_bg: Color::Rgb(7, 54, 66),
+        chart_bg: Color::Rgb(0, 36, 46),
     },
-    // Ayu Dark
     Theme {
         name: "Ayu",
         bg: Color::Rgb(10, 14, 20),
@@ -131,8 +135,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(255, 180, 84),
         tag: Color::Rgb(210, 154, 230),
         panel_bg: Color::Rgb(18, 22, 30),
+        chart_bg: Color::Rgb(6, 9, 14),
     },
-    // Flexoki Dark
     Theme {
         name: "Flexoki",
         bg: Color::Rgb(16, 15, 15),
@@ -152,8 +156,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(208, 162, 21),
         tag: Color::Rgb(142, 139, 206),
         panel_bg: Color::Rgb(24, 23, 22),
+        chart_bg: Color::Rgb(10, 9, 9),
     },
-    // Zoegi Dark
     Theme {
         name: "Zoegi",
         bg: Color::Rgb(20, 20, 20),
@@ -173,8 +177,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(128, 200, 160),
         tag: Color::Rgb(150, 180, 210),
         panel_bg: Color::Rgb(28, 28, 28),
+        chart_bg: Color::Rgb(14, 14, 14),
     },
-    // FFE Dark
     Theme {
         name: "FFE Dark",
         bg: Color::Rgb(30, 35, 43),
@@ -194,8 +198,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(240, 169, 136),
         tag: Color::Rgb(137, 220, 235),
         panel_bg: Color::Rgb(26, 31, 39),
+        chart_bg: Color::Rgb(22, 26, 34),
     },
-    // Postrboard Dark
     Theme {
         name: "Postrboard",
         bg: Color::Rgb(26, 27, 38),
@@ -215,8 +219,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(251, 138, 77),
         tag: Color::Rgb(96, 165, 250),
         panel_bg: Color::Rgb(22, 23, 31),
+        chart_bg: Color::Rgb(18, 19, 28),
     },
-    // --- Light themes ---
     // Default Light
     Theme {
         name: "Default Light",
@@ -237,8 +241,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(0, 140, 180),
         tag: Color::Rgb(100, 80, 180),
         panel_bg: Color::Rgb(235, 235, 240),
+        chart_bg: Color::Rgb(245, 245, 248),
     },
-    // Gruvbox Light
     Theme {
         name: "Gruvbox Light",
         bg: Color::Rgb(251, 241, 199),
@@ -258,8 +262,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(215, 153, 33),
         tag: Color::Rgb(69, 133, 136),
         panel_bg: Color::Rgb(242, 233, 185),
+        chart_bg: Color::Rgb(245, 236, 192),
     },
-    // Solarized Light
     Theme {
         name: "Solarized Light",
         bg: Color::Rgb(253, 246, 227),
@@ -279,8 +283,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(181, 137, 0),
         tag: Color::Rgb(108, 113, 196),
         panel_bg: Color::Rgb(238, 232, 213),
+        chart_bg: Color::Rgb(247, 241, 222),
     },
-    // Flexoki Light
     Theme {
         name: "Flexoki Light",
         bg: Color::Rgb(255, 252, 240),
@@ -300,8 +304,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(36, 131, 123),
         tag: Color::Rgb(100, 92, 187),
         panel_bg: Color::Rgb(244, 241, 230),
+        chart_bg: Color::Rgb(250, 247, 235),
     },
-    // Ayu Light
     Theme {
         name: "Ayu Light",
         bg: Color::Rgb(252, 252, 252),
@@ -321,8 +325,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(255, 153, 64),
         tag: Color::Rgb(163, 122, 204),
         panel_bg: Color::Rgb(242, 242, 242),
+        chart_bg: Color::Rgb(246, 246, 246),
     },
-    // Zoegi Light
     Theme {
         name: "Zoegi Light",
         bg: Color::Rgb(255, 255, 255),
@@ -342,8 +346,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(55, 121, 97),
         tag: Color::Rgb(80, 120, 160),
         panel_bg: Color::Rgb(245, 245, 245),
+        chart_bg: Color::Rgb(250, 250, 250),
     },
-    // FFE Light
     Theme {
         name: "FFE Light",
         bg: Color::Rgb(232, 236, 240),
@@ -363,8 +367,8 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(192, 121, 32),
         tag: Color::Rgb(58, 142, 164),
         panel_bg: Color::Rgb(245, 247, 250),
+        chart_bg: Color::Rgb(227, 231, 236),
     },
-    // Postrboard Light
     Theme {
         name: "Postrboard Light",
         bg: Color::Rgb(250, 250, 250),
@@ -384,6 +388,7 @@ pub const THEMES: &[Theme] = &[
         title: Color::Rgb(194, 65, 12),
         tag: Color::Rgb(12, 74, 110),
         panel_bg: Color::Rgb(241, 245, 249),
+        chart_bg: Color::Rgb(244, 244, 244),
     },
 ];
 

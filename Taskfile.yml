@@ -87,7 +87,7 @@ tasks:
         IFS='.' read -r MAJOR MINOR PATCH <<< "$V"
         PATCH=$((PATCH + 1))
         echo "$MAJOR.$MINOR.$PATCH" > VERSION
-        sed -i '' "s/^version = \".*\"/version = \"$MAJOR.$MINOR.$PATCH\"/" Cargo.toml
+        sed -i "s/^version = \".*\"/version = \"$MAJOR.$MINOR.$PATCH\"/" Cargo.toml
         echo "Bumped to $MAJOR.$MINOR.$PATCH"
 
   version:minor:
@@ -99,7 +99,7 @@ tasks:
         MINOR=$((MINOR + 1))
         PATCH=0
         echo "$MAJOR.$MINOR.$PATCH" > VERSION
-        sed -i '' "s/^version = \".*\"/version = \"$MAJOR.$MINOR.$PATCH\"/" Cargo.toml
+        sed -i "s/^version = \".*\"/version = \"$MAJOR.$MINOR.$PATCH\"/" Cargo.toml
         echo "Bumped to $MAJOR.$MINOR.$PATCH"
 
   version:major:
@@ -112,7 +112,7 @@ tasks:
         MINOR=0
         PATCH=0
         echo "$MAJOR.$MINOR.$PATCH" > VERSION
-        sed -i '' "s/^version = \".*\"/version = \"$MAJOR.$MINOR.$PATCH\"/" Cargo.toml
+        sed -i "s/^version = \".*\"/version = \"$MAJOR.$MINOR.$PATCH\"/" Cargo.toml
         echo "Bumped to $MAJOR.$MINOR.$PATCH"
 
   version:tag:

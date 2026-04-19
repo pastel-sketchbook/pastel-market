@@ -2,6 +2,7 @@
 //! with quality-control screening (Pastel Picker).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tracing::{info, warn};
@@ -16,6 +17,8 @@ use market_core::theme::{self, Theme};
 use whispers::WhisperResult;
 use yahoo_provider::QuoteProvider;
 
+use crate::worker::{FetchResult, Worker};
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -28,8 +31,11 @@ pub const SECTOR_SYMBOLS: &[&str] = &[
     "XLK", "XLF", "XLE", "XLV", "XLC", "XLY", "XLP", "XLI", "XLB", "XLRE", "XLU",
 ];
 
-/// Ticks between heartbeat refreshes when the market is closed.
-const HEARTBEAT_TICKS: u32 = 10;
+/// Ticks between active-market refreshes (30s at 250ms/tick = 120 ticks).
+const ACTIVE_REFRESH_TICKS: u32 = 120;
+
+/// Ticks between heartbeat refreshes when the market is closed (5min = 1200 ticks).
+const HEARTBEAT_TICKS: u32 = 1200;
 
 /// Maximum number of symbols to seed from a Yahoo screener on first launch.
 const SEED_LIMIT: usize = 20;
@@ -122,10 +128,11 @@ pub struct App {
     pub ticks_since_refresh: u32,
     pub pending_g: bool,
     pub top_movers: TopMovers,
+    pub loading: bool,
 
     // -- Private --
     skip_persist: bool,
-    client: Option<Box<dyn QuoteProvider>>,
+    worker: Option<Worker>,
 }
 
 impl App {
@@ -150,17 +157,19 @@ impl App {
         let filter_mode = config::filter_mode_from_string(&session.filter_mode);
         let view_mode = config::view_mode_from_string(&session.view_mode);
 
-        let client: Option<Box<dyn QuoteProvider>> = match yahoo_provider::YahooClient::new() {
-            Ok(c) => Some(Box::new(c)),
+        let client: Option<Arc<dyn QuoteProvider>> = match yahoo_provider::YahooClient::new() {
+            Ok(c) => Some(Arc::new(c)),
             Err(e) => {
                 warn!(error = %e, "Yahoo Finance session failed");
                 None
             }
         };
 
+        let worker = client.map(Worker::new);
+
         // Use persisted symbols, or seed from Yahoo's day-gainers screener.
         let symbols = if session.symbols.is_empty() {
-            seed_symbols_from_screener(client.as_deref())
+            seed_symbols_from_screener(worker.as_ref().map(Worker::client))
         } else {
             session.symbols.clone()
         };
@@ -201,15 +210,16 @@ impl App {
                 gainers: Vec::new(),
                 losers: Vec::new(),
             },
+            loading: false,
             skip_persist: false,
-            client,
+            worker,
         }
     }
 
     /// Test constructor: use a mock provider and skip disk I/O.
     #[cfg(test)]
     #[must_use]
-    pub fn with_provider(symbols: Vec<String>, provider: Box<dyn QuoteProvider>) -> Self {
+    pub fn with_provider(symbols: Vec<String>, provider: Arc<dyn QuoteProvider>) -> Self {
         let data =
             market_core::domain::mock::load_mock_data().unwrap_or_else(|_| fallback_mock_data());
         Self {
@@ -246,8 +256,9 @@ impl App {
                 gainers: Vec::new(),
                 losers: Vec::new(),
             },
+            loading: false,
             skip_persist: true,
-            client: Some(provider),
+            worker: Some(Worker::new(provider)),
         }
     }
 
@@ -344,58 +355,30 @@ impl App {
         Some(self.screener_results[idx].ticker.clone())
     }
 
-    // -- Data refresh --------------------------------------------------------
+    // -- Data refresh (non-blocking) -------------------------------------------
 
-    /// Refresh all market data from the provider.
+    /// Submit all market data fetches to the background worker.
+    ///
+    /// This returns immediately — results arrive via [`drain_results`].
     pub fn refresh_quotes(&mut self) {
-        let Some(client) = &self.client else {
+        let Some(worker) = &self.worker else {
             self.try_reconnect();
             return;
         };
 
+        self.loading = true;
+
         // Watchlist quotes
         let symbols: Vec<String> = self.watchlist.symbols().to_vec();
-        if !symbols.is_empty() {
-            match client.fetch_quotes(&symbols) {
-                Ok(quotes) => {
-                    self.watchlist.update_quotes(quotes);
-                    self.top_movers = TopMovers::from_quotes(self.watchlist.quotes(), 3);
-                    self.status_message.clear();
-                }
-                Err(e) => {
-                    warn!(error = %e, "quote refresh failed");
-                    self.status_message = format!("Refresh failed: {e}");
-                }
-            }
-        }
+        worker.submit_quotes(symbols);
 
         // Index quotes
         let idx_syms: Vec<String> = INDEX_SYMBOLS.iter().map(|s| (*s).to_string()).collect();
-        match client.fetch_quotes(&idx_syms) {
-            Ok(quotes) => {
-                // Derive market status from first index quote
-                if let Some(Some(q)) = quotes.first()
-                    && let Some(state) = &q.market_state
-                {
-                    self.market_status = MarketStatus::from_yahoo(state);
-                }
-                self.index_quotes = quotes;
-            }
-            Err(e) => {
-                warn!(error = %e, "index refresh failed");
-                self.index_quotes.clear();
-            }
-        }
+        worker.submit_index_quotes(idx_syms);
 
         // Sector quotes
         let sec_syms: Vec<String> = SECTOR_SYMBOLS.iter().map(|s| (*s).to_string()).collect();
-        match client.fetch_quotes(&sec_syms) {
-            Ok(quotes) => self.sector_quotes = quotes,
-            Err(e) => {
-                warn!(error = %e, "sector refresh failed");
-                self.sector_quotes.clear();
-            }
-        }
+        worker.submit_sector_quotes(sec_syms);
 
         // Sparkline for selected symbol
         self.refresh_sparkline();
@@ -410,63 +393,14 @@ impl App {
     }
 
     fn refresh_scanner(&mut self) {
-        let Some(client) = &self.client else { return };
-
-        match self.scanner_list {
-            ScannerList::Trending => match client.fetch_trending() {
-                Ok(syms) if !syms.is_empty() => match client.fetch_quotes(&syms) {
-                    Ok(quotes) => {
-                        self.scanner_quotes = quotes.into_iter().flatten().collect();
-                        self.update_top_movers_from_scanner();
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "trending hydrate failed");
-                        self.scanner_quotes.clear();
-                        self.status_message = format!("Scanner error: {e}");
-                    }
-                },
-                Ok(_) => self.scanner_quotes.clear(),
-                Err(e) => {
-                    warn!(error = %e, "trending fetch failed");
-                    self.scanner_quotes.clear();
-                    self.status_message = format!("Scanner error: {e}");
-                }
-            },
-            ScannerList::Fundamentals => match finviz_scraper::screener::fetch_raw() {
-                Ok(results) => {
-                    self.scanner_quotes = results
-                        .iter()
-                        .map(finviz_scraper::screener::screener_result_to_quote)
-                        .collect();
-                    self.screener_results = results;
-                    self.update_top_movers_from_scanner();
-                }
-                Err(e) => {
-                    warn!(error = %e, "finviz fetch failed");
-                    self.status_message = format!("Scanner error: {e}");
-                }
-            },
-            _ => match client.fetch_screener(self.scanner_list.screener_id()) {
-                Ok(quotes) => {
-                    self.scanner_quotes = quotes;
-                    self.update_top_movers_from_scanner();
-                }
-                Err(e) => {
-                    warn!(error = %e, "screener fetch failed");
-                    self.scanner_quotes.clear();
-                    self.status_message = format!("Scanner error: {e}");
-                }
-            },
-        }
+        let Some(worker) = &self.worker else { return };
+        worker.submit_scanner(self.scanner_list);
     }
 
     fn refresh_sparkline(&mut self) {
-        let Some(client) = &self.client else { return };
+        let Some(worker) = &self.worker else { return };
         if let Some(q) = self.watchlist.selected_quote() {
-            match client.fetch_sparkline(&q.symbol) {
-                Ok(points) => self.sparkline_data = points,
-                Err(_) => self.sparkline_data.clear(),
-            }
+            worker.submit_sparkline(q.symbol.clone());
         } else {
             self.sparkline_data.clear();
         }
@@ -481,23 +415,16 @@ impl App {
         }
     }
 
-    /// Fetch QC-specific data for the selected screener stock:
-    /// insider ownership, sector heat, whisper data, and historical beats.
+    /// Submit QC-specific fetches for the selected screener stock.
     fn refresh_qc_data(&mut self) {
         let Some(ticker) = self.selected_screener_ticker() else {
             return;
         };
+        let Some(worker) = &self.worker else { return };
 
         // Insider ownership
         if !self.insider_ownership.contains_key(&ticker) {
-            match finviz_scraper::detail::fetch_insider_ownership(&ticker) {
-                Ok(pct) => {
-                    self.insider_ownership.insert(ticker.clone(), pct);
-                }
-                Err(e) => {
-                    warn!(error = %e, ticker = %ticker, "insider ownership fetch failed");
-                }
-            }
+            worker.submit_insider_ownership(ticker.clone());
         }
 
         // Sector heat (needs sectors from screener results)
@@ -508,55 +435,35 @@ impl App {
                 .map(|r| r.sector.clone())
                 .collect();
             if !sectors.is_empty() {
-                self.sector_heat = finviz_scraper::sector::fetch_sector_heat(&sectors);
+                worker.submit_sector_heat(sectors);
             }
         }
 
         // Whisper data
         if !self.whisper_cache.contains_key(&ticker) {
-            match whispers::fetch(&ticker) {
-                Ok(w) => {
-                    // Extract past_beats from whisper result
-                    if let Some(beats) = w.past_beats {
-                        self.past_beats.insert(ticker.clone(), beats);
-                    }
-                    self.whisper_cache.insert(ticker.clone(), w);
-                }
-                Err(e) => {
-                    warn!(error = %e, ticker = %ticker, "whisper fetch failed");
-                }
-            }
+            worker.submit_whisper(ticker);
         }
     }
 
-    /// Fetch the quote for the most recently added symbol (last in the list).
+    /// Submit a quote fetch for the most recently added symbol.
     fn refresh_added_symbol(&mut self) {
-        let Some(client) = &self.client else { return };
+        let Some(worker) = &self.worker else { return };
         let symbols = self.watchlist.symbols();
-        let Some(sym) = symbols.last() else { return };
-        match client.fetch_quotes(std::slice::from_ref(sym)) {
-            Ok(mut quotes) => {
-                if let Some(q) = quotes.pop() {
-                    let idx = symbols.len() - 1;
-                    self.watchlist.set_quote(idx, q);
-                }
-            }
-            Err(e) => {
-                warn!(error = %e, "failed to fetch added symbol quote");
-            }
+        if symbols.is_empty() {
+            return;
         }
+        let idx = symbols.len() - 1;
+        let sym = symbols[idx].clone();
+        worker.submit_added_symbol(sym, idx);
     }
 
     fn refresh_news(&mut self) {
         if !self.show_news {
             return;
         }
-        let Some(client) = &self.client else { return };
+        let Some(worker) = &self.worker else { return };
         if let Some(q) = self.watchlist.selected_quote() {
-            match client.fetch_news(&q.symbol) {
-                Ok(items) => self.news_headlines = items,
-                Err(_) => self.news_headlines.clear(),
-            }
+            worker.submit_news(q.symbol.clone());
         } else {
             self.news_headlines.clear();
         }
@@ -566,7 +473,12 @@ impl App {
         info!("attempting Yahoo Finance reconnection");
         match yahoo_provider::YahooClient::new() {
             Ok(c) => {
-                self.client = Some(Box::new(c));
+                let client: Arc<dyn QuoteProvider> = Arc::new(c);
+                if let Some(worker) = &mut self.worker {
+                    worker.set_client(Arc::clone(&client));
+                } else {
+                    self.worker = Some(Worker::new(client));
+                }
                 self.status_message = "Reconnected".to_string();
                 self.refresh_quotes();
             }
@@ -577,22 +489,95 @@ impl App {
         }
     }
 
+    /// Drain all completed background fetch results and apply them to state.
+    ///
+    /// Called from the main event loop on every iteration.
+    pub fn drain_results(&mut self) {
+        let Some(worker) = &self.worker else { return };
+        let results = worker.try_recv();
+        if results.is_empty() {
+            return;
+        }
+
+        for result in results {
+            match result {
+                FetchResult::Quotes { quotes } => {
+                    self.watchlist.update_quotes(quotes);
+                    self.top_movers = TopMovers::from_quotes(self.watchlist.quotes(), 3);
+                    self.status_message.clear();
+                    self.loading = false;
+                    // Now that quotes are available, fetch sparkline for selected.
+                    self.refresh_sparkline();
+                }
+                FetchResult::IndexQuotes { quotes } => {
+                    if let Some(Some(q)) = quotes.first()
+                        && let Some(state) = &q.market_state
+                    {
+                        self.market_status = MarketStatus::from_yahoo(state);
+                    }
+                    self.index_quotes = quotes;
+                }
+                FetchResult::SectorQuotes { quotes } => {
+                    self.sector_quotes = quotes;
+                }
+                FetchResult::Sparkline { points } => {
+                    self.sparkline_data = points;
+                }
+                FetchResult::News { items } => {
+                    self.news_headlines = items;
+                }
+                FetchResult::Scanner {
+                    quotes,
+                    screener_results,
+                } => {
+                    self.scanner_quotes = quotes;
+                    if let Some(results) = screener_results {
+                        self.screener_results = results;
+                    }
+                    self.update_top_movers_from_scanner();
+                }
+                FetchResult::AddedSymbol { quote, index } => {
+                    if let Some(q) = quote {
+                        self.watchlist.set_quote(index, Some(q));
+                    }
+                }
+                FetchResult::InsiderOwnership { ticker, pct } => {
+                    self.insider_ownership.insert(ticker, pct);
+                }
+                FetchResult::SectorHeat { heat } => {
+                    self.sector_heat = heat;
+                }
+                FetchResult::Whisper { ticker, result } => {
+                    if let Some(beats) = result.past_beats {
+                        self.past_beats.insert(ticker.clone(), beats);
+                    }
+                    self.whisper_cache.insert(ticker, result);
+                }
+                FetchResult::Error { context, message } => {
+                    warn!(context, error = %message, "background fetch failed");
+                    self.status_message = format!("{context}: {message}");
+                    self.loading = false;
+                }
+            }
+        }
+    }
+
     // -- Tick handler --------------------------------------------------------
 
-    /// Called every event-loop tick (250ms).
+    /// Called every UI tick (250ms).
     ///
-    /// Auto-refreshes when the market is active; sends heartbeat pings
-    /// during closed hours.
+    /// Counts ticks and submits background refresh jobs at the appropriate
+    /// interval: every 30s when the market is active, every 5min otherwise.
     pub fn on_tick(&mut self) {
-        if self.market_status.is_active() {
+        self.ticks_since_refresh += 1;
+        let threshold = if self.market_status.is_active() {
+            ACTIVE_REFRESH_TICKS
+        } else {
+            HEARTBEAT_TICKS
+        };
+        if self.ticks_since_refresh >= threshold {
             self.ticks_since_refresh = 0;
             self.refresh_quotes();
-        } else {
-            self.ticks_since_refresh += 1;
-            if self.ticks_since_refresh >= HEARTBEAT_TICKS {
-                self.ticks_since_refresh = 0;
-                self.refresh_quotes();
-            }
         }
     }
 
@@ -1024,16 +1009,27 @@ mod tests {
 
     fn make_app(symbols: &[&str]) -> App {
         let syms: Vec<String> = symbols.iter().map(|s| (*s).to_string()).collect();
-        App::with_provider(syms, Box::new(MockProvider::new()))
+        App::with_provider(syms, Arc::new(MockProvider::new()))
     }
 
     fn make_app_failing(symbols: &[&str]) -> App {
         let syms: Vec<String> = symbols.iter().map(|s| (*s).to_string()).collect();
-        App::with_provider(syms, Box::new(FailingProvider))
+        App::with_provider(syms, Arc::new(FailingProvider))
     }
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    /// Submit fetches and wait for background threads to complete.
+    fn refresh_and_drain(app: &mut App) {
+        app.refresh_quotes();
+        // Give background threads time to complete with mock data.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        app.drain_results();
+        // Second drain picks up any follow-up fetches (e.g. sparkline after quotes).
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        app.drain_results();
     }
 
     // -- Basic quit tests -----------------------------------------------------
@@ -1226,7 +1222,7 @@ mod tests {
     #[test]
     fn refresh_quotes_updates_data() {
         let mut app = make_app(&["AAPL", "MSFT"]);
-        app.refresh_quotes();
+        refresh_and_drain(&mut app);
         assert!(app.watchlist.selected_quote().is_some());
         assert!(!app.sparkline_data.is_empty());
     }
@@ -1234,14 +1230,14 @@ mod tests {
     #[test]
     fn refresh_with_failing_provider_shows_error() {
         let mut app = make_app_failing(&["AAPL"]);
-        app.refresh_quotes();
+        refresh_and_drain(&mut app);
         assert!(!app.status_message.is_empty());
     }
 
     #[test]
     fn refresh_populates_index_quotes() {
         let mut app = make_app(&["AAPL"]);
-        app.refresh_quotes();
+        refresh_and_drain(&mut app);
         // MockProvider returns empty for index symbols, but no panic.
         assert!(app.status_message.is_empty() || !app.status_message.is_empty());
     }
@@ -1321,11 +1317,20 @@ mod tests {
     // -- On tick --------------------------------------------------------------
 
     #[test]
-    fn on_tick_refreshes_when_market_active() {
+    fn on_tick_counts_up_when_market_active() {
         let mut app = make_app(&["AAPL"]);
         app.market_status = MarketStatus::Open;
         app.on_tick();
-        assert_eq!(app.ticks_since_refresh, 0);
+        assert_eq!(app.ticks_since_refresh, 1);
+    }
+
+    #[test]
+    fn on_tick_resets_at_active_threshold() {
+        let mut app = make_app(&["AAPL"]);
+        app.market_status = MarketStatus::Open;
+        app.ticks_since_refresh = ACTIVE_REFRESH_TICKS - 1;
+        app.on_tick();
+        assert_eq!(app.ticks_since_refresh, 0); // reset after refresh
     }
 
     #[test]

@@ -34,7 +34,7 @@ const YAHOO_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
 ///
 /// Decouples the application from the concrete Yahoo Finance client,
 /// making it possible to inject test doubles.
-pub trait QuoteProvider {
+pub trait QuoteProvider: Send + Sync {
     /// Fetch real-time quotes for the given symbols.
     ///
     /// Returns one `Option<Quote>` per input symbol (in the same order).

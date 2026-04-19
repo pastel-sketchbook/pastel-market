@@ -4,6 +4,7 @@
 mod app;
 mod event;
 mod ui;
+mod worker;
 
 use std::io;
 use std::time::Duration;
@@ -19,8 +20,9 @@ use tracing::info;
 use app::App;
 use event::{Event, EventHandler};
 
-/// Auto-refresh tick interval.
-const TICK_RATE_SECS: u64 = 30;
+/// UI tick interval (250ms) — controls draw/drain rate.
+/// Actual data refresh is managed by the App's tick counter.
+const TICK_RATE_MS: u64 = 250;
 
 fn main() -> Result<()> {
     // File-based logging. Guard must stay alive until exit.
@@ -39,7 +41,7 @@ fn main() -> Result<()> {
     app.refresh_quotes();
 
     // Event loop.
-    let events = EventHandler::new(Duration::from_secs(TICK_RATE_SECS));
+    let events = EventHandler::new(Duration::from_millis(TICK_RATE_MS));
     let res = run_loop(&mut terminal, &mut app, &events);
 
     // Restore terminal unconditionally.
@@ -58,6 +60,9 @@ fn run_loop(
     events: &EventHandler,
 ) -> Result<()> {
     loop {
+        // Drain any completed background fetches before drawing.
+        app.drain_results();
+
         terminal.draw(|frame| ui::draw(frame, app))?;
 
         match events.next()? {

@@ -8,10 +8,10 @@ mod qc;
 mod scanner;
 mod watchlist;
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::Style;
 use ratatui::widgets::{Block, Clear};
-use ratatui::Frame;
 
 use crate::app::App;
 use market_core::domain::ViewMode;
@@ -59,7 +59,7 @@ fn draw_market_layout(frame: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(3), // header
             Constraint::Length(3), // sector row
-            Constraint::Min(5),   // table (flexible)
+            Constraint::Min(5),    // table (flexible)
             Constraint::Length(6), // movers / news
             Constraint::Length(5), // detail
             Constraint::Length(1), // footer
@@ -94,8 +94,8 @@ fn draw_qc_layout(frame: &mut Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // header
-            Constraint::Fill(35), // middle panels (35% of remaining)
-            Constraint::Fill(65), // screener table (65% of remaining)
+            Constraint::Fill(35),  // middle panels (35% of remaining)
+            Constraint::Fill(65),  // screener table (65% of remaining)
             Constraint::Length(1), // footer
         ])
         .split(area);

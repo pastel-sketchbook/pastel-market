@@ -103,13 +103,9 @@ pub fn parse_quote(value: &serde_json::Value) -> Option<Quote> {
         market_state: value["marketState"].as_str().map(String::from),
         regular_market_price: value["regularMarketPrice"].as_f64().unwrap_or(0.0),
         regular_market_change: value["regularMarketChange"].as_f64().unwrap_or(0.0),
-        regular_market_change_percent: value["regularMarketChangePercent"]
-            .as_f64()
-            .unwrap_or(0.0),
+        regular_market_change_percent: value["regularMarketChangePercent"].as_f64().unwrap_or(0.0),
         regular_market_volume: value["regularMarketVolume"].as_u64().unwrap_or(0),
-        regular_market_previous_close: value["regularMarketPreviousClose"]
-            .as_f64()
-            .unwrap_or(0.0),
+        regular_market_previous_close: value["regularMarketPreviousClose"].as_f64().unwrap_or(0.0),
         regular_market_open: value["regularMarketOpen"].as_f64().unwrap_or(0.0),
         regular_market_day_high: value["regularMarketDayHigh"].as_f64().unwrap_or(0.0),
         regular_market_day_low: value["regularMarketDayLow"].as_f64().unwrap_or(0.0),

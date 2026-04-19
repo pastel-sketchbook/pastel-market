@@ -1,9 +1,9 @@
 //! Quality Control view: 3-column middle panels + screener table.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Cell, List, ListItem, Padding, Row, Table};
-use ratatui::Frame;
 
 use crate::app::{App, Focus};
 use market_core::theme::Theme;
@@ -29,13 +29,7 @@ pub fn draw_qc_middle(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 }
 
 /// Finviz coarse filter panel (from mock data display items).
-fn draw_finviz_panel(
-    frame: &mut Frame,
-    _app: &App,
-    theme: &Theme,
-    title_style: Style,
-    area: Rect,
-) {
+fn draw_finviz_panel(frame: &mut Frame, _app: &App, theme: &Theme, title_style: Style, area: Rect) {
     // Static display of filter criteria.
     let items = vec![
         ListItem::new("Market Cap > $300M"),
@@ -46,27 +40,19 @@ fn draw_finviz_panel(
         ListItem::new("Avg Volume > 500K"),
     ];
 
-    let list = List::new(items)
-        .style(Style::default().fg(theme.fg))
-        .block(
-            Block::default()
-                .title(" A: COARSE FILTER ")
-                .title_style(title_style)
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.border))
-                .padding(Padding::horizontal(1)),
-        );
+    let list = List::new(items).style(Style::default().fg(theme.fg)).block(
+        Block::default()
+            .title(" A: COARSE FILTER ")
+            .title_style(title_style)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border))
+            .padding(Padding::horizontal(1)),
+    );
     frame.render_widget(list, area);
 }
 
 /// Earnings Whispers precision gauge panel.
-fn draw_whisper_panel(
-    frame: &mut Frame,
-    app: &App,
-    theme: &Theme,
-    title_style: Style,
-    area: Rect,
-) {
+fn draw_whisper_panel(frame: &mut Frame, app: &App, theme: &Theme, title_style: Style, area: Rect) {
     let items: Vec<ListItem> = if let Some(ticker) = app.selected_screener_ticker() {
         if let Some(whisper) = app.whisper_cache.get(&ticker) {
             let mut lines = Vec::new();
@@ -112,13 +98,7 @@ fn draw_whisper_panel(
 }
 
 /// Interactive QC checklist panel.
-fn draw_qc_checklist(
-    frame: &mut Frame,
-    app: &App,
-    theme: &Theme,
-    title_style: Style,
-    area: Rect,
-) {
+fn draw_qc_checklist(frame: &mut Frame, app: &App, theme: &Theme, title_style: Style, area: Rect) {
     let any_passed = app.any_fully_passed();
     let ac = active_color(any_passed, theme);
 
@@ -147,7 +127,11 @@ fn draw_qc_checklist(
                 } else {
                     "[ ]"
                 };
-                let auto_indicator = if auto_checked && !checked { " \u{2713}" } else { "" };
+                let auto_indicator = if auto_checked && !checked {
+                    " \u{2713}"
+                } else {
+                    ""
+                };
 
                 let style = if app.focus == Focus::QcChecklist && i == app.selected_qc {
                     let fg = if checked || auto_checked {
@@ -314,7 +298,9 @@ pub fn draw_screener_table(frame: &mut Frame, app: &mut App, theme: &Theme, area
         table,
         area,
         &mut ratatui::widgets::TableState::default().with_selected(Some(
-            app.watchlist.selected().min(app.screener_results.len().saturating_sub(1)),
+            app.watchlist
+                .selected()
+                .min(app.screener_results.len().saturating_sub(1)),
         )),
     );
 }

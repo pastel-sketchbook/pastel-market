@@ -1,15 +1,17 @@
 //! Watchlist table rendering with heatmap, sorting, filtering, and rank badges.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Cell, Row, Table};
-use ratatui::Frame;
 
 use crate::app::App;
 use market_core::domain::{FilterMode, Quote, QuoteRank, SortMode, rank_by_change};
 use market_core::theme::Theme;
 
-use super::helpers::{format_change_cell, format_volume, heatmap_color, highlight_style, stripe_style};
+use super::helpers::{
+    format_change_cell, format_volume, heatmap_color, highlight_style, stripe_style,
+};
 
 /// Column widths shared between watchlist and scanner tables.
 pub const TABLE_WIDTHS: [Constraint; 6] = [

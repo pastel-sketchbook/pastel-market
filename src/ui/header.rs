@@ -1,10 +1,10 @@
 //! Header bar: title, market status, index quotes, sector performance.
 
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph};
-use ratatui::Frame;
 
 use crate::app::{App, INDEX_SYMBOLS, SECTOR_SYMBOLS};
 use market_core::domain::{MarketStatus, Quote};

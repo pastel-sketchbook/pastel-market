@@ -1,9 +1,9 @@
 //! Scanner table rendering (day gainers/losers, most active, trending, fundamentals).
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::{Block, Borders, Table};
-use ratatui::Frame;
 
 use crate::app::App;
 use market_core::domain::{Quote, rank_by_change};

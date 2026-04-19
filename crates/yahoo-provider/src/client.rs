@@ -19,8 +19,7 @@ const COOKIE_URL: &str = "https://fc.yahoo.com/curveball";
 const CRUMB_URL: &str = "https://query2.finance.yahoo.com/v1/test/getcrumb";
 const QUOTE_URL: &str = "https://query2.finance.yahoo.com/v7/finance/quote";
 const SPARK_URL: &str = "https://query2.finance.yahoo.com/v8/finance/spark";
-const SCREENER_URL: &str =
-    "https://query2.finance.yahoo.com/v1/finance/screener/predefined/saved";
+const SCREENER_URL: &str = "https://query2.finance.yahoo.com/v1/finance/screener/predefined/saved";
 const TRENDING_URL: &str = "https://query2.finance.yahoo.com/v1/finance/trending/US";
 const SEARCH_URL: &str = "https://query2.finance.yahoo.com/v1/finance/search";
 

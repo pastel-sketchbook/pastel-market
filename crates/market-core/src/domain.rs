@@ -121,7 +121,7 @@ impl Watchlist {
             self.selected = self
                 .selected
                 .checked_sub(1)
-                .unwrap_or(self.symbols.len() - 1);
+                .unwrap_or(self.symbols.len().saturating_sub(1));
         }
     }
 
@@ -133,7 +133,7 @@ impl Watchlist {
     /// Jump to the last item in the list.
     pub fn select_last(&mut self) {
         if !self.symbols.is_empty() {
-            self.selected = self.symbols.len() - 1;
+            self.selected = self.symbols.len().saturating_sub(1);
         }
     }
 
@@ -152,7 +152,7 @@ impl Watchlist {
             self.symbols.remove(self.selected);
             self.quotes.remove(self.selected);
             if self.selected >= self.symbols.len() && !self.symbols.is_empty() {
-                self.selected = self.symbols.len() - 1;
+                self.selected = self.symbols.len().saturating_sub(1);
             }
         }
     }

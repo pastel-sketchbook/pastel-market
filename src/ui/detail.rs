@@ -1,10 +1,10 @@
 //! Detail pane, top movers, and news panel rendering.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui::Frame;
 
 use crate::app::App;
 use market_core::domain::{Mover, NewsItem, TopMovers};

@@ -291,7 +291,10 @@ mod tests {
         let result = fetch("AAPL");
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
-        assert!(msg.contains("chrome"), "error should mention chrome feature");
+        assert!(
+            msg.contains("chrome"),
+            "error should mention chrome feature"
+        );
     }
 
     #[test]

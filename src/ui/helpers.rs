@@ -2,10 +2,10 @@
 
 use market_core::domain::{QuoteRank, RankBadge};
 use market_core::theme::Theme;
+use ratatui::Frame;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
-use ratatui::Frame;
 
 /// Minimum terminal width for the TUI to render properly.
 pub const MIN_TERM_WIDTH: u16 = 80;
@@ -153,14 +153,8 @@ pub fn active_color(any_passed: bool, theme: &Theme) -> Color {
 #[must_use]
 pub fn refresh_indicator<'a>(is_active: bool, theme: &Theme) -> Span<'a> {
     if is_active {
-        Span::styled(
-            " ⟳ 30s ",
-            Style::default().fg(theme.accent),
-        )
+        Span::styled(" ⟳ 30s ", Style::default().fg(theme.accent))
     } else {
-        Span::styled(
-            " ⏸ 5m ",
-            Style::default().fg(theme.muted),
-        )
+        Span::styled(" ⏸ 5m ", Style::default().fg(theme.muted))
     }
 }

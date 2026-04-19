@@ -1,10 +1,10 @@
 //! Footer bar with keyboard shortcuts and status indicators.
 
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use ratatui::Frame;
 
 use crate::app::{App, Focus, InputMode};
 use market_core::domain::ViewMode;
@@ -19,10 +19,7 @@ pub fn draw_footer(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let spans = match app.input_mode {
         InputMode::Normal => build_normal_footer(app, theme, &sep),
         InputMode::Adding => vec![
-            Span::styled(
-                " Add symbol: ",
-                Style::default().fg(theme.accent),
-            ),
+            Span::styled(" Add symbol: ", Style::default().fg(theme.accent)),
             Span::styled(
                 app.input_buffer.clone(),
                 Style::default().add_modifier(ratatui::style::Modifier::BOLD),
@@ -43,11 +40,7 @@ pub fn draw_footer(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     ];
 
     #[allow(clippy::cast_possible_truncation)]
-    let right_width: u16 = right_spans
-        .iter()
-        .map(|s| s.content.len())
-        .sum::<usize>() as u16
-        + 1;
+    let right_width: u16 = right_spans.iter().map(|s| s.content.len()).sum::<usize>() as u16 + 1;
 
     let cols = Layout::default()
         .direction(Direction::Horizontal)

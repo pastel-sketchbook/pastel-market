@@ -136,7 +136,7 @@ impl App {
         let session = config::load_session();
         let qc_session = QcSession::load();
         let data = market_core::domain::mock::load_mock_data().unwrap_or_else(|e| {
-            warn!("failed to load mock data: {e}");
+            warn!(error = %e, "failed to load mock data");
             fallback_mock_data()
         });
 
@@ -151,14 +151,13 @@ impl App {
         let filter_mode = config::filter_mode_from_string(&session.filter_mode);
         let view_mode = config::view_mode_from_string(&session.view_mode);
 
-        let client: Option<Box<dyn QuoteProvider>> =
-            match yahoo_provider::YahooClient::new() {
-                Ok(c) => Some(Box::new(c)),
-                Err(e) => {
-                    warn!("Yahoo Finance session failed: {e}");
-                    None
-                }
-            };
+        let client: Option<Box<dyn QuoteProvider>> = match yahoo_provider::YahooClient::new() {
+            Ok(c) => Some(Box::new(c)),
+            Err(e) => {
+                warn!(error = %e, "Yahoo Finance session failed");
+                None
+            }
+        };
 
         Self {
             watchlist: Watchlist::new(symbols),
@@ -203,7 +202,8 @@ impl App {
     #[cfg(test)]
     #[must_use]
     pub fn with_provider(symbols: Vec<String>, provider: Box<dyn QuoteProvider>) -> Self {
-        let data = market_core::domain::mock::load_mock_data().unwrap_or_else(|_| fallback_mock_data());
+        let data =
+            market_core::domain::mock::load_mock_data().unwrap_or_else(|_| fallback_mock_data());
         Self {
             watchlist: Watchlist::new(symbols),
             input_mode: InputMode::Normal,
@@ -270,10 +270,7 @@ impl App {
                 .insider_ownership
                 .get(ticker)
                 .is_some_and(|&pct| pct > 1.0),
-            2 => self
-                .sector_heat
-                .get(ticker)
-                .is_some_and(|&heat| heat > 0.0),
+            2 => self.sector_heat.get(ticker).is_some_and(|&heat| heat > 0.0),
             4 => self.past_beats.get(ticker).copied().unwrap_or(false),
             _ => false,
         }
@@ -311,7 +308,10 @@ impl App {
     pub fn toggle_qc(&mut self) {
         if let Some(ticker) = self.selected_screener_ticker() {
             let n = self.qc_labels.len();
-            let state = self.qc_state.entry(ticker).or_insert_with(|| vec![false; n]);
+            let state = self
+                .qc_state
+                .entry(ticker)
+                .or_insert_with(|| vec![false; n]);
             if state.len() < n {
                 state.resize(n, false);
             }
@@ -329,7 +329,10 @@ impl App {
         if self.screener_results.is_empty() {
             return None;
         }
-        let idx = self.watchlist.selected().min(self.screener_results.len().saturating_sub(1));
+        let idx = self
+            .watchlist
+            .selected()
+            .min(self.screener_results.len().saturating_sub(1));
         Some(self.screener_results[idx].ticker.clone())
     }
 
@@ -352,7 +355,7 @@ impl App {
                     self.status_message.clear();
                 }
                 Err(e) => {
-                    warn!("quote refresh failed: {e}");
+                    warn!(error = %e, "quote refresh failed");
                     self.status_message = format!("Refresh failed: {e}");
                 }
             }
@@ -371,7 +374,7 @@ impl App {
                 self.index_quotes = quotes;
             }
             Err(e) => {
-                warn!("index refresh failed: {e}");
+                warn!(error = %e, "index refresh failed");
                 self.index_quotes.clear();
             }
         }
@@ -381,7 +384,7 @@ impl App {
         match client.fetch_quotes(&sec_syms) {
             Ok(quotes) => self.sector_quotes = quotes,
             Err(e) => {
-                warn!("sector refresh failed: {e}");
+                warn!(error = %e, "sector refresh failed");
                 self.sector_quotes.clear();
             }
         }
@@ -402,53 +405,45 @@ impl App {
         let Some(client) = &self.client else { return };
 
         match self.scanner_list {
-            ScannerList::Trending => {
-                match client.fetch_trending() {
-                    Ok(syms) if !syms.is_empty() => {
-                        match client.fetch_quotes(&syms) {
-                            Ok(quotes) => {
-                                self.scanner_quotes = quotes.into_iter().flatten().collect();
-                            }
-                            Err(e) => {
-                                warn!("trending hydrate failed: {e}");
-                                self.scanner_quotes.clear();
-                                self.status_message = format!("Scanner error: {e}");
-                            }
-                        }
+            ScannerList::Trending => match client.fetch_trending() {
+                Ok(syms) if !syms.is_empty() => match client.fetch_quotes(&syms) {
+                    Ok(quotes) => {
+                        self.scanner_quotes = quotes.into_iter().flatten().collect();
                     }
-                    Ok(_) => self.scanner_quotes.clear(),
                     Err(e) => {
-                        warn!("trending fetch failed: {e}");
+                        warn!(error = %e, "trending hydrate failed");
                         self.scanner_quotes.clear();
                         self.status_message = format!("Scanner error: {e}");
                     }
+                },
+                Ok(_) => self.scanner_quotes.clear(),
+                Err(e) => {
+                    warn!(error = %e, "trending fetch failed");
+                    self.scanner_quotes.clear();
+                    self.status_message = format!("Scanner error: {e}");
                 }
-            }
-            ScannerList::Fundamentals => {
-                match finviz_scraper::screener::fetch_raw() {
-                    Ok(results) => {
-                        self.scanner_quotes = results
-                            .iter()
-                            .map(finviz_scraper::screener::screener_result_to_quote)
-                            .collect();
-                        self.screener_results = results;
-                    }
-                    Err(e) => {
-                        warn!("finviz fetch failed: {e}");
-                        self.status_message = format!("Scanner error: {e}");
-                    }
+            },
+            ScannerList::Fundamentals => match finviz_scraper::screener::fetch_raw() {
+                Ok(results) => {
+                    self.scanner_quotes = results
+                        .iter()
+                        .map(finviz_scraper::screener::screener_result_to_quote)
+                        .collect();
+                    self.screener_results = results;
                 }
-            }
-            _ => {
-                match client.fetch_screener(self.scanner_list.screener_id()) {
-                    Ok(quotes) => self.scanner_quotes = quotes,
-                    Err(e) => {
-                        warn!("screener fetch failed: {e}");
-                        self.scanner_quotes.clear();
-                        self.status_message = format!("Scanner error: {e}");
-                    }
+                Err(e) => {
+                    warn!(error = %e, "finviz fetch failed");
+                    self.status_message = format!("Scanner error: {e}");
                 }
-            }
+            },
+            _ => match client.fetch_screener(self.scanner_list.screener_id()) {
+                Ok(quotes) => self.scanner_quotes = quotes,
+                Err(e) => {
+                    warn!(error = %e, "screener fetch failed");
+                    self.scanner_quotes.clear();
+                    self.status_message = format!("Scanner error: {e}");
+                }
+            },
         }
     }
 
@@ -488,7 +483,7 @@ impl App {
                 self.refresh_quotes();
             }
             Err(e) => {
-                warn!("reconnection failed: {e}");
+                warn!(error = %e, "reconnection failed");
                 self.status_message = format!("Connection failed: {e}");
             }
         }
@@ -572,7 +567,7 @@ impl App {
                 Focus::Table => self.watchlist.select_last(),
                 Focus::QcChecklist => {
                     if !self.qc_labels.is_empty() {
-                        self.selected_qc = self.qc_labels.len() - 1;
+                        self.selected_qc = self.qc_labels.len().saturating_sub(1);
                     }
                 }
             },
@@ -590,9 +585,7 @@ impl App {
             }
 
             // QC toggle (Space/Enter in QC view)
-            KeyCode::Char(' ') | KeyCode::Enter
-                if self.view_mode == ViewMode::QualityControl =>
-            {
+            KeyCode::Char(' ') | KeyCode::Enter if self.view_mode == ViewMode::QualityControl => {
                 self.toggle_qc();
             }
 
@@ -842,7 +835,13 @@ mod tests {
         fn fetch_quotes(&self, symbols: &[String]) -> Result<Vec<Option<Quote>>> {
             Ok(symbols
                 .iter()
-                .map(|s| self.quotes.iter().find(|q| q.as_ref().is_some_and(|q| q.symbol == *s)).cloned().flatten())
+                .map(|s| {
+                    self.quotes
+                        .iter()
+                        .find(|q| q.as_ref().is_some_and(|q| q.symbol == *s))
+                        .cloned()
+                        .flatten()
+                })
                 .collect())
         }
 
@@ -859,7 +858,12 @@ mod tests {
         }
 
         fn fetch_trending(&self) -> Result<Vec<String>> {
-            Ok(self.quotes.iter().flatten().map(|q| q.symbol.clone()).collect())
+            Ok(self
+                .quotes
+                .iter()
+                .flatten()
+                .map(|q| q.symbol.clone())
+                .collect())
         }
     }
 

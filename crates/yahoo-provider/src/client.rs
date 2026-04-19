@@ -97,8 +97,12 @@ impl YahooClient {
     ///
     /// Returns an error if the session cookie or crumb cannot be obtained.
     pub fn new() -> Result<Self> {
+        // Disable http_status_as_error so that non-2xx responses (like the
+        // 404 from the cookie endpoint) still store Set-Cookie headers in the
+        // cookie jar. Without this, ureq returns Err before processing cookies.
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(REQUEST_TIMEOUT))
+            .http_status_as_error(false)
             .build();
         let agent = ureq::Agent::new_with_config(config);
 
@@ -115,6 +119,11 @@ impl YahooClient {
             .header("User-Agent", USER_AGENT)
             .call()
             .context("failed to fetch Yahoo Finance crumb")?;
+
+        let status = crumb_response.status().as_u16();
+        if status != 200 {
+            bail!("Yahoo Finance crumb endpoint returned HTTP {status}");
+        }
 
         let crumb = crumb_response
             .body_mut()

@@ -19,6 +19,7 @@ const COOKIE_URL: &str = "https://fc.yahoo.com/curveball";
 const CRUMB_URL: &str = "https://query2.finance.yahoo.com/v1/test/getcrumb";
 const QUOTE_URL: &str = "https://query2.finance.yahoo.com/v7/finance/quote";
 const SPARK_URL: &str = "https://query2.finance.yahoo.com/v8/finance/spark";
+const CHART_URL: &str = "https://query2.finance.yahoo.com/v8/finance/chart";
 const SCREENER_URL: &str = "https://query2.finance.yahoo.com/v1/finance/screener/predefined/saved";
 const TRENDING_URL: &str = "https://query2.finance.yahoo.com/v1/finance/trending/US";
 const SEARCH_URL: &str = "https://query2.finance.yahoo.com/v1/finance/search";
@@ -192,6 +193,28 @@ impl QuoteProvider for YahooClient {
         let crumb = self.crumb.clone();
         let sym = symbol.to_string();
 
+        // Try the chart endpoint first — it supports all tickers and ranges.
+        let chart_url = format!("{CHART_URL}/{sym}");
+        let chart_result = call_with_retry(|| {
+            agent
+                .get(&chart_url)
+                .header("User-Agent", YAHOO_UA)
+                .query("crumb", &crumb)
+                .query("range", range.yahoo_range())
+                .query("interval", range.yahoo_interval())
+                .query("includeTimestamps", "true")
+        });
+
+        if let Ok(mut body) = chart_result
+            && let Ok(json) = body.read_json::<serde_json::Value>()
+        {
+            let points = quotes::parse_chart_response(&json);
+            if !points.is_empty() {
+                return Ok(points);
+            }
+        }
+
+        // Fall back to the spark endpoint (works for some tickers/ranges).
         let mut body = call_with_retry(|| {
             agent
                 .get(SPARK_URL)

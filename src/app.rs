@@ -670,6 +670,10 @@ impl App {
                     warn!(context, error = %message, "background fetch failed");
                     self.status_message = format!("{context}: {message}");
                     self.loading = false;
+                    // Clear chart loading on chart fetch errors.
+                    if context == "chart" {
+                        self.chart_loading = false;
+                    }
                 }
             }
         }
@@ -905,9 +909,16 @@ impl App {
     /// Open the performance chart for the currently selected stock.
     fn open_chart(&mut self) {
         let symbol = match self.view_mode {
-            ViewMode::Watchlist | ViewMode::Scanner => {
-                self.watchlist.selected_quote().map(|q| q.symbol.clone())
-            }
+            ViewMode::Watchlist | ViewMode::Scanner => self
+                .watchlist
+                .selected_quote()
+                .map(|q| q.symbol.clone())
+                .or_else(|| {
+                    // Fall back to the symbol name when the quote hasn't loaded yet.
+                    let syms = self.watchlist.symbols();
+                    let idx = self.watchlist.selected();
+                    syms.get(idx).cloned()
+                }),
             ViewMode::QualityControl => self.selected_screener_ticker(),
         };
         let Some(sym) = symbol else { return };
@@ -1645,9 +1656,17 @@ mod tests {
     }
 
     #[test]
-    fn enter_does_nothing_without_quotes() {
+    fn enter_opens_chart_even_without_quotes() {
         let mut app = make_app(&["AAPL"]);
-        // No refresh — no quotes loaded
+        // No refresh — no quotes loaded, but symbol name is available.
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.chart_open);
+        assert_eq!(app.chart_symbol, "AAPL");
+    }
+
+    #[test]
+    fn enter_does_nothing_with_empty_watchlist() {
+        let mut app = make_app(&[]);
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.chart_open);
     }

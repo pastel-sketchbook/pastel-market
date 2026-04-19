@@ -50,6 +50,33 @@ pub fn parse_sparkline_response(body: &serde_json::Value) -> Vec<PricePoint> {
         .collect()
 }
 
+/// Extract price points from the Yahoo Finance v8 chart response.
+///
+/// The chart endpoint (`/v8/finance/chart/{symbol}`) returns:
+/// ```json
+/// { "chart": { "result": [{ "timestamp": [...], "indicators": { "quote": [{ "close": [...] }] } }] } }
+/// ```
+#[must_use]
+pub fn parse_chart_response(body: &serde_json::Value) -> Vec<PricePoint> {
+    let result = &body["chart"]["result"][0];
+    let timestamps = result["timestamp"].as_array().cloned().unwrap_or_default();
+    let closes = result["indicators"]["quote"][0]["close"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+
+    timestamps
+        .iter()
+        .zip(closes.iter())
+        .filter_map(|(t, c)| {
+            c.as_f64().map(|close| PricePoint {
+                timestamp: t.as_i64(),
+                close,
+            })
+        })
+        .collect()
+}
+
 /// Extract quotes from a Yahoo Finance screener response.
 ///
 /// The screener endpoint (`/v1/finance/screener/predefined/saved`)
@@ -303,6 +330,50 @@ mod tests {
     #[test]
     fn sparkline_missing_key_returns_empty() {
         assert!(parse_sparkline_response(&serde_json::json!({})).is_empty());
+    }
+
+    // --- parse_chart_response ---
+
+    fn make_chart_body(closes: &[serde_json::Value]) -> serde_json::Value {
+        let timestamps: Vec<serde_json::Value> = (0..closes.len())
+            .map(|i| serde_json::json!(1_700_000_000 + (i as i64) * 300))
+            .collect();
+        serde_json::json!({
+            "chart": { "result": [{ "timestamp": timestamps, "indicators": { "quote": [{ "close": closes }] } }] }
+        })
+    }
+
+    #[test]
+    fn chart_extracts_close_prices() {
+        let body = make_chart_body(&[
+            serde_json::json!(100.0),
+            serde_json::json!(101.5),
+            serde_json::json!(102.0),
+        ]);
+        let points = parse_chart_response(&body);
+        assert_eq!(points.len(), 3);
+        assert!((points[0].close - 100.0).abs() < f64::EPSILON);
+        assert!(points[0].timestamp.is_some());
+    }
+
+    #[test]
+    fn chart_filters_null_closes() {
+        let body = make_chart_body(&[
+            serde_json::json!(100.0),
+            serde_json::json!(null),
+            serde_json::json!(102.0),
+        ]);
+        assert_eq!(parse_chart_response(&body).len(), 2);
+    }
+
+    #[test]
+    fn chart_empty_returns_empty() {
+        assert!(parse_chart_response(&make_chart_body(&[])).is_empty());
+    }
+
+    #[test]
+    fn chart_missing_key_returns_empty() {
+        assert!(parse_chart_response(&serde_json::json!({})).is_empty());
     }
 
     // --- parse_screener_response ---

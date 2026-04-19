@@ -30,13 +30,15 @@ pub fn draw_footer(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 
     let left = Paragraph::new(Line::from(spans));
 
-    // Right-aligned: refresh indicator + theme name.
+    // Right-aligned: refresh indicator + theme name + version.
     let indicator = refresh_indicator(app.market_status.is_active(), theme);
     let theme_name = app.theme().name;
+    let version = env!("CARGO_PKG_VERSION");
     let right_spans = vec![
         indicator,
         muted_span(" \u{2502} ", theme),
         muted_span(&format!("{theme_name} "), theme),
+        muted_span(&format!("v{version} "), theme),
     ];
 
     #[allow(clippy::cast_possible_truncation)]

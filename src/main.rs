@@ -19,14 +19,6 @@ use tracing::info;
 use app::App;
 use event::{Event, EventHandler};
 
-/// Default symbols shown on first launch.
-///
-/// 20 tickers spanning major sectors for broad market representation.
-const DEFAULT_SYMBOLS: &[&str] = &[
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK-B", "JPM", "V", "UNH", "XOM",
-    "LLY", "COST", "AVGO", "MA", "HD", "LIN", "WMT", "PG",
-];
-
 /// Auto-refresh tick interval.
 const TICK_RATE_SECS: u64 = 30;
 
@@ -43,8 +35,7 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Build app state + initial data fetch.
-    let symbols: Vec<String> = DEFAULT_SYMBOLS.iter().map(|s| (*s).to_string()).collect();
-    let mut app = App::new(symbols);
+    let mut app = App::new();
     app.refresh_quotes();
 
     // Event loop.

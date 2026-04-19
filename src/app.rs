@@ -31,6 +31,9 @@ pub const SECTOR_SYMBOLS: &[&str] = &[
 /// Ticks between heartbeat refreshes when the market is closed.
 const HEARTBEAT_TICKS: u32 = 10;
 
+/// Maximum number of symbols to seed from a Yahoo screener on first launch.
+const SEED_LIMIT: usize = 20;
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -126,12 +129,14 @@ pub struct App {
 }
 
 impl App {
-    /// Create a new `App` with the given default symbols.
+    /// Create a new `App`.
     ///
     /// Loads persisted preferences, session, and QC state from disk.
-    /// Attempts to establish a Yahoo Finance session.
+    /// Attempts to establish a Yahoo Finance session. If no persisted
+    /// watchlist exists, seeds the watchlist from Yahoo's day-gainers
+    /// screener (top 20 performers).
     #[must_use]
-    pub fn new(default_symbols: Vec<String>) -> Self {
+    pub fn new() -> Self {
         let prefs = config::load_preferences();
         let session = config::load_session();
         let qc_session = QcSession::load();
@@ -139,12 +144,6 @@ impl App {
             warn!(error = %e, "failed to load mock data");
             fallback_mock_data()
         });
-
-        let symbols = if session.symbols.is_empty() {
-            default_symbols
-        } else {
-            session.symbols.clone()
-        };
 
         let theme_index = theme::theme_index_by_name(&prefs.theme);
         let sort_mode = config::sort_mode_from_string(&session.sort_mode);
@@ -158,6 +157,15 @@ impl App {
                 None
             }
         };
+
+        // Use persisted symbols, or seed from Yahoo's day-gainers screener.
+        let symbols = if session.symbols.is_empty() {
+            seed_symbols_from_screener(client.as_deref())
+        } else {
+            session.symbols.clone()
+        };
+
+        info!(count = symbols.len(), "initial watchlist symbols");
 
         Self {
             watchlist: Watchlist::new(symbols),
@@ -729,6 +737,44 @@ impl App {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Seed the initial watchlist by fetching Yahoo's day-gainers screener.
+///
+/// Falls back to day-losers, then most-active if earlier screeners fail.
+/// Returns an empty `Vec` if no screener succeeds.
+fn seed_symbols_from_screener(client: Option<&dyn QuoteProvider>) -> Vec<String> {
+    let Some(client) = client else {
+        return Vec::new();
+    };
+
+    let screeners = ["day_gainers", "day_losers", "most_actives"];
+    for scr_id in &screeners {
+        match client.fetch_screener(scr_id) {
+            Ok(quotes) if !quotes.is_empty() => {
+                let symbols: Vec<String> = quotes
+                    .iter()
+                    .take(SEED_LIMIT)
+                    .map(|q| q.symbol.clone())
+                    .collect();
+                info!(
+                    screener = *scr_id,
+                    count = symbols.len(),
+                    "seeded watchlist from screener"
+                );
+                return symbols;
+            }
+            Ok(_) => {
+                warn!(screener = *scr_id, "screener returned empty results");
+            }
+            Err(e) => {
+                warn!(error = %e, screener = *scr_id, "screener fetch failed");
+            }
+        }
+    }
+
+    warn!("all screeners failed — starting with empty watchlist");
+    Vec::new()
+}
 
 /// Minimal fallback when mock.json can't be loaded.
 fn fallback_mock_data() -> MockData {

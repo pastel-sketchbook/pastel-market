@@ -158,3 +158,11 @@ pub fn refresh_indicator<'a>(is_active: bool, theme: &Theme) -> Span<'a> {
         Span::styled(" ⏸ 5m ", Style::default().fg(theme.muted))
     }
 }
+
+/// Tick-based spinner frame (Braille dots cycling at ~4 fps with 250ms ticks).
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn spinner_frame(tick: u64) -> char {
+    const FRAMES: &[char] = &['\u{280b}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283c}', '\u{2834}', '\u{2826}', '\u{2827}', '\u{2807}', '\u{280f}'];
+    FRAMES[(tick as usize) % FRAMES.len()]
+}

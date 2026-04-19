@@ -17,7 +17,7 @@ pub fn draw_detail(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let label_style = Style::default().fg(theme.accent);
 
     let content = if let Some(q) = app.watchlist.selected_quote() {
-        vec![
+        let mut lines = vec![
             Line::from(vec![
                 Span::styled("Open: ", label_style),
                 Span::raw(format!("{:.2}", q.regular_market_open)),
@@ -40,7 +40,45 @@ pub fn draw_detail(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
                 Span::styled("Volume: ", label_style),
                 Span::raw(format_volume(q.regular_market_volume)),
             ]),
-        ]
+        ];
+
+        // 52-week range bar
+        let range = q.fifty_two_week_high - q.fifty_two_week_low;
+        if range > 0.0 {
+            let position =
+                ((q.regular_market_price - q.fifty_two_week_low) / range).clamp(0.0, 1.0);
+            let bar_width: usize = 20;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+            let marker_pos = (position * bar_width as f64).round() as usize;
+            let marker_pos = marker_pos.min(bar_width);
+
+            let bar: String = (0..=bar_width)
+                .map(|i| if i == marker_pos { '\u{25c6}' } else { '\u{2500}' })
+                .collect();
+
+            let pct_of_range = position * 100.0;
+            lines.push(Line::from(vec![
+                Span::styled("52W: ", label_style),
+                Span::raw(format!("{:.0} ", q.fifty_two_week_low)),
+                Span::styled(
+                    bar,
+                    Style::default().fg(if pct_of_range >= 80.0 {
+                        theme.status
+                    } else if pct_of_range >= 50.0 {
+                        theme.accent
+                    } else {
+                        theme.muted
+                    }),
+                ),
+                Span::raw(format!(" {:.0}", q.fifty_two_week_high)),
+                Span::styled(
+                    format!(" ({pct_of_range:.0}%)"),
+                    Style::default().fg(theme.fg),
+                ),
+            ]));
+        }
+
+        lines
     } else {
         vec![Line::from("No symbol selected")]
     };

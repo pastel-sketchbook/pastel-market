@@ -30,10 +30,10 @@ pub fn draw_qc_middle(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     draw_qc_checklist(frame, app, theme, title_style, mid_chunks[2]);
 }
 
-/// Finviz coarse filter panel (from mock data display items).
-fn draw_finviz_panel(frame: &mut Frame, _app: &App, theme: &Theme, title_style: Style, area: Rect) {
-    // Static display of filter criteria.
-    let items = vec![
+/// Finviz coarse filter panel — shows filter criteria with live match count.
+fn draw_finviz_panel(frame: &mut Frame, app: &App, theme: &Theme, title_style: Style, area: Rect) {
+    let count = app.screener_results.len();
+    let mut items = vec![
         ListItem::new("Market Cap > $300M"),
         ListItem::new("P/E < 25"),
         ListItem::new("EPS Growth > 15%"),
@@ -41,6 +41,15 @@ fn draw_finviz_panel(frame: &mut Frame, _app: &App, theme: &Theme, title_style: 
         ListItem::new("Beta < 1.5"),
         ListItem::new("Avg Volume > 500K"),
     ];
+
+    // Append a live match summary when screener data is present.
+    if count > 0 {
+        items.push(ListItem::new(""));
+        items.push(
+            ListItem::new(format!(" {count} stocks pass filters"))
+                .style(Style::default().fg(theme.status).add_modifier(Modifier::BOLD)),
+        );
+    }
 
     let list = List::new(items).style(Style::default().fg(theme.fg)).block(
         Block::default()
@@ -135,6 +144,10 @@ fn draw_qc_checklist(frame: &mut Frame, app: &App, theme: &Theme, title_style: S
                     ""
                 };
 
+                let value_str = app
+                    .qc_inline_value(&ticker, i)
+                    .unwrap_or_default();
+
                 let style = if app.focus == Focus::QcChecklist && i == app.selected_qc {
                     let fg = if checked || auto_checked {
                         theme.status
@@ -153,7 +166,7 @@ fn draw_qc_checklist(frame: &mut Frame, app: &App, theme: &Theme, title_style: S
                     Style::default().fg(theme.fg)
                 };
 
-                ListItem::new(format!("{prefix} {label}{auto_indicator}")).style(style)
+                ListItem::new(format!("{prefix} {label}{auto_indicator}{value_str}")).style(style)
             })
             .collect()
     } else {
@@ -196,7 +209,14 @@ pub fn draw_screener_table(frame: &mut Frame, app: &mut App, theme: &Theme, area
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        let msg = ratatui::widgets::Paragraph::new("No screener data — press [r] to refresh")
+        let msg_text = if app.loading {
+            let spinner = super::helpers::spinner_frame(app.tick);
+            format!("{spinner} Loading screener data...")
+        } else {
+            "No screener data \u{2014} press [r] to refresh".to_string()
+        };
+
+        let msg = ratatui::widgets::Paragraph::new(msg_text)
             .style(Style::default().fg(theme.muted))
             .alignment(ratatui::layout::Alignment::Center);
         let mid_y = inner.y + inner.height / 2;

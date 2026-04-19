@@ -119,6 +119,7 @@ pub struct App {
     pub insider_ownership: HashMap<String, f64>,
     pub sector_heat: HashMap<String, f64>,
     pub past_beats: HashMap<String, bool>,
+    pub chart_patterns: HashMap<String, String>,
 
     // -- Chart overlay --
     pub chart_open: bool,
@@ -209,6 +210,7 @@ impl App {
             insider_ownership: HashMap::new(),
             sector_heat: HashMap::new(),
             past_beats: HashMap::new(),
+            chart_patterns: HashMap::new(),
             chart_open: false,
             chart_symbol: String::new(),
             chart_range: ChartRange::default(),
@@ -260,6 +262,7 @@ impl App {
             insider_ownership: HashMap::new(),
             sector_heat: HashMap::new(),
             past_beats: HashMap::new(),
+            chart_patterns: HashMap::new(),
             chart_open: false,
             chart_symbol: String::new(),
             chart_range: ChartRange::default(),
@@ -294,6 +297,81 @@ impl App {
     }
 
     // -- QC & Conviction -----------------------------------------------------
+
+    /// Analyze the price change to derive a chart pattern label for the ticker.
+    pub fn analyze_chart_pattern(&mut self, ticker: &str, change: &str) {
+        let pct: f64 = change
+            .trim_end_matches('%')
+            .trim_start_matches('+')
+            .parse()
+            .unwrap_or(0.0);
+
+        let pattern = if pct > 5.0 {
+            "Strong breakout"
+        } else if pct > 2.0 {
+            "Uptrend"
+        } else if pct > 0.0 {
+            "Mild bullish"
+        } else if pct > -2.0 {
+            "Mild bearish"
+        } else if pct > -5.0 {
+            "Downtrend"
+        } else {
+            "Strong breakdown"
+        };
+
+        self.chart_patterns
+            .insert(ticker.to_string(), pattern.to_string());
+    }
+
+    /// Returns the inline value annotation for a QC item, if data is available.
+    ///
+    /// Used by the QC checklist UI to show contextual data next to each label.
+    #[must_use]
+    pub fn qc_inline_value(&self, ticker: &str, item_index: usize) -> Option<String> {
+        match item_index {
+            0 => {
+                // News catalyst — first headline snippet
+                self.news_headlines.first().map(|n| {
+                    let title = if n.title.len() > 40 {
+                        format!("{}...", &n.title[..40])
+                    } else {
+                        n.title.clone()
+                    };
+                    format!(" ({title})")
+                })
+            }
+            1 => {
+                // Insider ownership percentage
+                self.insider_ownership
+                    .get(ticker)
+                    .map(|&pct| format!(" ({pct:.1}% insider)"))
+            }
+            2 => {
+                // Sector heat vs SPY
+                self.sector_heat
+                    .get(ticker)
+                    .map(|&heat| format!(" ({heat:+.1}% vs SPY)"))
+            }
+            3 => {
+                // Chart pattern
+                self.chart_patterns
+                    .get(ticker)
+                    .map(|p| format!(" ({p})"))
+            }
+            4 => {
+                // Historical beats
+                self.past_beats.get(ticker).map(|&b| {
+                    if b {
+                        " (beats)".to_string()
+                    } else {
+                        " (misses)".to_string()
+                    }
+                })
+            }
+            _ => None,
+        }
+    }
 
     /// Whether QC item at `item_index` is auto-checked for `ticker` from live data.
     ///
@@ -519,6 +597,11 @@ impl App {
         for result in results {
             match result {
                 FetchResult::Quotes { quotes } => {
+                    // Analyze chart patterns from quote change data.
+                    for q in quotes.iter().flatten() {
+                        let change = format!("{:+.2}%", q.regular_market_change_percent);
+                        self.analyze_chart_pattern(&q.symbol, &change);
+                    }
                     self.watchlist.update_quotes(quotes);
                     self.top_movers = TopMovers::from_quotes(self.watchlist.quotes(), 3);
                     self.status_message.clear();
@@ -563,6 +646,10 @@ impl App {
                 } => {
                     self.scanner_quotes = quotes;
                     if let Some(results) = screener_results {
+                        // Analyze chart patterns from change data.
+                        for r in &results {
+                            self.analyze_chart_pattern(&r.ticker, &r.change);
+                        }
                         self.screener_results = results;
                     }
                     self.update_top_movers_from_scanner();
@@ -1560,5 +1647,103 @@ mod tests {
         // No refresh — no quotes loaded
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.chart_open);
+    }
+
+    // -- Chart pattern analysis -----------------------------------------------
+
+    #[test]
+    fn analyze_chart_pattern_breakout() {
+        let mut app = make_app(&["AAPL"]);
+        app.analyze_chart_pattern("AAPL", "+6.5%");
+        assert_eq!(app.chart_patterns.get("AAPL").unwrap(), "Strong breakout");
+    }
+
+    #[test]
+    fn analyze_chart_pattern_downtrend() {
+        let mut app = make_app(&["AAPL"]);
+        app.analyze_chart_pattern("AAPL", "-3.2%");
+        assert_eq!(app.chart_patterns.get("AAPL").unwrap(), "Downtrend");
+    }
+
+    #[test]
+    fn analyze_chart_pattern_mild_bullish() {
+        let mut app = make_app(&["AAPL"]);
+        app.analyze_chart_pattern("AAPL", "+0.5%");
+        assert_eq!(app.chart_patterns.get("AAPL").unwrap(), "Mild bullish");
+    }
+
+    // -- QC inline values -----------------------------------------------------
+
+    #[test]
+    fn qc_inline_value_insider() {
+        let mut app = make_app(&["AAPL"]);
+        app.insider_ownership.insert("AAPL".to_string(), 5.3);
+        assert_eq!(
+            app.qc_inline_value("AAPL", 1),
+            Some(" (5.3% insider)".to_string())
+        );
+    }
+
+    #[test]
+    fn qc_inline_value_sector_heat() {
+        let mut app = make_app(&["AAPL"]);
+        app.sector_heat.insert("AAPL".to_string(), 2.5);
+        assert_eq!(
+            app.qc_inline_value("AAPL", 2),
+            Some(" (+2.5% vs SPY)".to_string())
+        );
+    }
+
+    #[test]
+    fn qc_inline_value_chart_pattern() {
+        let mut app = make_app(&["AAPL"]);
+        app.chart_patterns
+            .insert("AAPL".to_string(), "Uptrend".to_string());
+        assert_eq!(
+            app.qc_inline_value("AAPL", 3),
+            Some(" (Uptrend)".to_string())
+        );
+    }
+
+    #[test]
+    fn qc_inline_value_past_beats() {
+        let mut app = make_app(&["AAPL"]);
+        app.past_beats.insert("AAPL".to_string(), true);
+        assert_eq!(
+            app.qc_inline_value("AAPL", 4),
+            Some(" (beats)".to_string())
+        );
+    }
+
+    #[test]
+    fn qc_inline_value_none_when_no_data() {
+        let app = make_app(&["AAPL"]);
+        assert_eq!(app.qc_inline_value("AAPL", 1), None);
+        assert_eq!(app.qc_inline_value("AAPL", 3), None);
+    }
+
+    // -- Spinner helper -------------------------------------------------------
+
+    #[test]
+    fn spinner_frame_cycles() {
+        use crate::ui::helpers::spinner_frame;
+        let f0 = spinner_frame(0);
+        let f1 = spinner_frame(1);
+        assert_ne!(f0, f1);
+        // Wraps around after 10 frames.
+        assert_eq!(spinner_frame(0), spinner_frame(10));
+    }
+
+    // -- Chart pattern from quotes refresh ------------------------------------
+
+    #[test]
+    fn chart_patterns_populated_after_refresh() {
+        let mut app = make_app(&["AAPL", "MSFT"]);
+        refresh_and_drain(&mut app);
+        // MockProvider returns AAPL with +1.15% and MSFT with -0.74%.
+        assert!(app.chart_patterns.contains_key("AAPL"));
+        assert!(app.chart_patterns.contains_key("MSFT"));
+        assert_eq!(app.chart_patterns.get("AAPL").unwrap(), "Mild bullish");
+        assert_eq!(app.chart_patterns.get("MSFT").unwrap(), "Mild bearish");
     }
 }

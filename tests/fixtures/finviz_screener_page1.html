@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head><title>FINVIZ.com - Stock Screener</title></head>
+<body>
+<!-- Navigation and ads that should be ignored by parser -->
+<div class="navbar">
+<a href="/">Home</a>
+<a href="/screener.ashx">Screener</a>
+</div>
+<div class="content-ad">
+<table class="ad-table"><tr><td>Ad content here</td></tr></table>
+</div>
+
+<!-- Toolbar / filters summary -->
+<div id="screener-toolbar">
+<table class="filters-table">
+<tr><td>Market Cap: +Small (over $300M)</td><td>P/E: Under 25</td></tr>
+</table>
+</div>
+
+<!-- Pagination bar -->
+<div class="screener-pages">
+<a href="?v=111&f=...&r=1" class="is-selected">1</a>
+<a href="?v=111&f=...&r=21">2</a>
+<a href="?v=111&f=...&r=41">3</a>
+<span class="count-text">Total: 47</span>
+</div>
+
+<!-- THE ACTUAL SCREENER TABLE — this is what parse_page targets -->
+<table width="100%" cellpadding="3" cellspacing="0" border="0" class="styled-table-new is-rounded is-tabbed screener_table">
+<thead>
+<tr>
+<th class="cursor-pointer" data-boxover="No.">No.</th>
+<th class="cursor-pointer" data-boxover="Ticker">Ticker</th>
+<th class="cursor-pointer" data-boxover="Company">Company</th>
+<th class="cursor-pointer" data-boxover="Sector">Sector</th>
+<th class="cursor-pointer" data-boxover="Industry">Industry</th>
+<th class="cursor-pointer" data-boxover="Country">Country</th>
+<th class="cursor-pointer" data-boxover="Market Cap.">Market Cap</th>
+<th class="cursor-pointer" data-boxover="Price/Earnings">P/E</th>
+<th class="cursor-pointer" data-boxover="Price">Price</th>
+<th class="cursor-pointer" data-boxover="Change">Change</th>
+<th class="cursor-pointer" data-boxover="Volume">Volume</th>
+</tr>
+</thead>
+<tbody>
+<tr class="styled-row is-hoverable" data-boxover="">
+<td class="is-number">1</td>
+<td><a href="quote.ashx?t=AAPL&amp;ty=c&amp;p=d&amp;b=1" class="tab-link">AAPL</a></td>
+<td><a href="quote.ashx?t=AAPL&amp;ty=c&amp;p=d&amp;b=1" class="tab-link">Apple Inc.</a></td>
+<td><a href="screener.ashx?v=111&amp;f=sec_technology">Technology</a></td>
+<td><a href="screener.ashx?v=111&amp;f=ind_consumerelectronics">Consumer Electronics</a></td>
+<td><a href="screener.ashx?v=111&amp;f=geo_usa">USA</a></td>
+<td><a href="screener.ashx?v=111&amp;f=cap_mega">3.58T</a></td>
+<td class="is-number">37.91</td>
+<td><a href="quote.ashx?t=AAPL" class="tab-link"><strong>233.22</strong></a></td>
+<td><span class="is-green">0.42%</span></td>
+<td>47,312,581</td>
+</tr>
+<tr class="styled-row is-hoverable" data-boxover="">
+<td class="is-number">2</td>
+<td><a href="quote.ashx?t=MSFT" class="tab-link">MSFT</a></td>
+<td><a href="quote.ashx?t=MSFT" class="tab-link">Microsoft Corporation</a></td>
+<td><a href="screener.ashx?v=111&amp;f=sec_technology">Technology</a></td>
+<td><a href="screener.ashx?v=111&amp;f=ind_softwareinfrastructure">Software - Infrastructure</a></td>
+<td><a href="screener.ashx?v=111&amp;f=geo_usa">USA</a></td>
+<td><a href="screener.ashx?v=111&amp;f=cap_mega">3.19T</a></td>
+<td class="is-number">35.29</td>
+<td><a href="quote.ashx?t=MSFT" class="tab-link"><strong>429.03</strong></a></td>
+<td><span class="is-red">-0.18%</span></td>
+<td>18,442,109</td>
+</tr>
+<tr class="styled-row is-hoverable" data-boxover="">
+<td class="is-number">3</td>
+<td><a href="quote.ashx?t=GOOG" class="tab-link">GOOG</a></td>
+<td><a href="quote.ashx?t=GOOG" class="tab-link">Alphabet Inc.</a></td>
+<td><a href="screener.ashx?v=111&amp;f=sec_communicationservices">Communication Services</a></td>
+<td><a href="screener.ashx?v=111&amp;f=ind_internetcontentinformation">Internet Content &amp; Information</a></td>
+<td><a href="screener.ashx?v=111&amp;f=geo_usa">USA</a></td>
+<td><a href="screener.ashx?v=111&amp;f=cap_mega">2.19T</a></td>
+<td class="is-number">22.56</td>
+<td><a href="quote.ashx?t=GOOG" class="tab-link"><strong>179.56</strong></a></td>
+<td><span class="is-red">-1.03%</span></td>
+<td>22,903,441</td>
+</tr>
+<tr class="styled-row is-hoverable" data-boxover="">
+<td class="is-number">4</td>
+<td><a href="quote.ashx?t=AMZN" class="tab-link">AMZN</a></td>
+<td><a href="quote.ashx?t=AMZN" class="tab-link">Amazon.com, Inc.</a></td>
+<td><a href="screener.ashx?v=111&amp;f=sec_consumercyclical">Consumer Cyclical</a></td>
+<td><a href="screener.ashx?v=111&amp;f=ind_internetretail">Internet Retail</a></td>
+<td><a href="screener.ashx?v=111&amp;f=geo_usa">USA</a></td>
+<td><a href="screener.ashx?v=111&amp;f=cap_mega">2.35T</a></td>
+<td class="is-number">42.80</td>
+<td><a href="quote.ashx?t=AMZN" class="tab-link"><strong>222.41</strong></a></td>
+<td><span class="is-green">1.15%</span></td>
+<td>38,557,200</td>
+</tr>
+<tr class="styled-row is-hoverable" data-boxover="">
+<td class="is-number">5</td>
+<td><a href="quote.ashx?t=META" class="tab-link">META</a></td>
+<td><a href="quote.ashx?t=META" class="tab-link">Meta Platforms, Inc.</a></td>
+<td><a href="screener.ashx?v=111&amp;f=sec_communicationservices">Communication Services</a></td>
+<td><a href="screener.ashx?v=111&amp;f=ind_internetcontentinformation">Internet Content &amp; Information</a></td>
+<td><a href="screener.ashx?v=111&amp;f=geo_usa">USA</a></td>
+<td><a href="screener.ashx?v=111&amp;f=cap_mega">1.58T</a></td>
+<td class="is-number">25.94</td>
+<td><a href="quote.ashx?t=META" class="tab-link"><strong>626.38</strong></a></td>
+<td><span class="is-green">2.31%</span></td>
+<td>15,883,294</td>
+</tr>
+</tbody>
+</table>
+
+<!-- Footer -->
+<div class="footer">
+<p>Copyright &copy; 2024 FINVIZ.com</p>
+</div>
+</body>
+</html>

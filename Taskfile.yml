@@ -1,0 +1,138 @@
+version: "3"
+
+# ---------------------------------------------------------------------------
+# Rust workspace task automation for pastel-market.
+# Combines pastel-picker (screening) + reins-market (monitoring).
+# ---------------------------------------------------------------------------
+
+tasks:
+  # --- Quality Gates ---
+  check:all:
+    desc: "Run all quality gates (format, lint, test)"
+    deps: [format, lint, test:unit]
+    cmds:
+      - echo "All checks passed!"
+
+  format:
+    desc: "Auto-format all workspace crates"
+    cmds:
+      - cargo fmt --all -- --check
+
+  fmt:
+    desc: "Format all Rust code (write mode)"
+    cmds:
+      - cargo fmt --all
+
+  lint:
+    desc: "Run clippy on all targets"
+    cmds:
+      - cargo clippy --all-targets -- -D warnings
+
+  test:unit:
+    desc: "Run all workspace tests"
+    cmds:
+      - cargo test --workspace
+
+  test:verbose:
+    desc: "Run tests with output visible (--nocapture)"
+    cmds:
+      - cargo test --workspace -- --nocapture
+
+  # --- Build ---
+  build:
+    desc: "Build all workspace crates (debug)"
+    cmds:
+      - cargo build --workspace
+
+  build:release:
+    desc: "Build optimized release binary"
+    deps: [check:all]
+    cmds:
+      - cargo build --release
+
+  # --- Run ---
+  run:
+    desc: "Run pastel-market TUI"
+    cmds:
+      - cargo run
+
+  # --- Install ---
+  install:
+    desc: "Build release binary and install to ~/.cargo/bin"
+    cmds:
+      - cargo install --path . --locked
+
+  # --- Code Quality ---
+  loc:
+    desc: "Show lines of code statistics using tokei"
+    cmds:
+      - tokei
+
+  clean:
+    desc: "Remove build artifacts"
+    cmds:
+      - cargo clean
+
+  # --- Version Management (VERSION file is single source of truth) ---
+  version:show:
+    desc: "Print the current version"
+    cmds:
+      - cat VERSION
+
+  version:patch:
+    desc: "Bump patch version (0.1.0 → 0.1.1) and sync to Cargo.toml"
+    cmds:
+      - |
+        V=$(tr -d '[:space:]' < VERSION)
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$V"
+        PATCH=$((PATCH + 1))
+        echo "$MAJOR.$MINOR.$PATCH" > VERSION
+        sed -i '' "s/^version = \".*\"/version = \"$MAJOR.$MINOR.$PATCH\"/" Cargo.toml
+        echo "Bumped to $MAJOR.$MINOR.$PATCH"
+
+  version:minor:
+    desc: "Bump minor version (0.1.0 → 0.2.0) and sync to Cargo.toml"
+    cmds:
+      - |
+        V=$(tr -d '[:space:]' < VERSION)
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$V"
+        MINOR=$((MINOR + 1))
+        PATCH=0
+        echo "$MAJOR.$MINOR.$PATCH" > VERSION
+        sed -i '' "s/^version = \".*\"/version = \"$MAJOR.$MINOR.$PATCH\"/" Cargo.toml
+        echo "Bumped to $MAJOR.$MINOR.$PATCH"
+
+  version:major:
+    desc: "Bump major version (0.1.0 → 1.0.0) and sync to Cargo.toml"
+    cmds:
+      - |
+        V=$(tr -d '[:space:]' < VERSION)
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$V"
+        MAJOR=$((MAJOR + 1))
+        MINOR=0
+        PATCH=0
+        echo "$MAJOR.$MINOR.$PATCH" > VERSION
+        sed -i '' "s/^version = \".*\"/version = \"$MAJOR.$MINOR.$PATCH\"/" Cargo.toml
+        echo "Bumped to $MAJOR.$MINOR.$PATCH"
+
+  version:tag:
+    desc: "Create a git tag from the current VERSION file"
+    cmds:
+      - |
+        V=$(tr -d '[:space:]' < VERSION)
+        git tag -a "v$V" -m "Release v$V"
+        echo "Tagged v$V"
+
+  # --- Release ---
+  release:
+    desc: "Bump patch, commit, tag, and push"
+    cmds:
+      - task: version:patch
+      - |
+        set -e
+        V=$(tr -d '[:space:]' < VERSION)
+        git add VERSION Cargo.toml Cargo.lock
+        git commit -m "chore: bump version to $V"
+        git tag "v$V"
+        git push && git push origin "v$V"
+        echo "Released v$V"

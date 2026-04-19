@@ -1,0 +1,15 @@
+[package]
+name = "finviz-scraper"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+market-core.workspace = true
+anyhow.workspace = true
+scraper.workspace = true
+tracing.workspace = true
+ureq.workspace = true
+
+[lints]
+workspace = true

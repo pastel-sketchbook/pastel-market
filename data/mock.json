@@ -1,0 +1,95 @@
+{
+  "finviz_filters": {
+    "title": "A: COARSE FILTER",
+    "descriptive": {
+      "market_cap": ">$300M (Small+)",
+      "country": "USA"
+    },
+    "fundamentals": {
+      "pe_ratio": "<25",
+      "eps_growth": ">15%",
+      "sales_growth": ">10%",
+      "debt_equity": "<0.5",
+      "current_ratio": ">1.5"
+    },
+    "technicals": {
+      "trend": "Price > SMA50 & SMA200",
+      "rsi_14": "30-70 (Non-Extreme)",
+      "beta": "<1.5",
+      "avg_volume": ">500K"
+    },
+    "display_items": [
+      { "label": "Market Cap: >$300M (Small+)", "highlight": false },
+      { "label": "Trend: Price > SMA50 & SMA200", "highlight": true },
+      { "label": "RSI (14): 30-70 (Non-Extreme)", "highlight": false },
+      { "label": "P/E: <25 | Debt/Equity: <0.5", "highlight": false },
+      { "label": "EPS Growth: >15% | Sales: >10%", "highlight": true }
+    ]
+  },
+  "whisper_data": {
+    "title": "B: PRECISION GAUGE",
+    "display_items": [
+      { "label": "Whisper > Consensus? YES", "color": "green" },
+      { "label": "Whisper Grade: > B-",      "color": "default" },
+      { "label": "Implied Volatility: High (>5%)", "color": "default" },
+      { "label": "Report Timing: After Market",    "color": "default" },
+      { "label": "Prediction: STRONG DRIFT",       "color": "cyan" }
+    ]
+  },
+  "qc_checklist": {
+    "title": "QUALITY CONTROL",
+    "items": [
+      "Insider/Inst. Ownership",
+      "Sector Heat vs Peers",
+      "News Feed Catalysts",
+      "Chart Patterns Validated",
+      "History: Past Beats"
+    ]
+  },
+  "maintenance_schedule": {
+    "title": "OPERATIONAL MAINTENANCE SCHEDULE",
+    "columns": ["TICKER", "FILTERS", "WHISPER EDGE", "TARGET", "STATUS"],
+    "targets": [
+      {
+        "ticker": "AAPL",
+        "filters_passed": true,
+        "whisper_edge": "+2.5%",
+        "target_price": "$180",
+        "status": "completed",
+        "actual_move": "+3.1%"
+      },
+      {
+        "ticker": "PLTR",
+        "filters_passed": true,
+        "whisper_edge": "+4.1%",
+        "target_price": "$25",
+        "status": "pending",
+        "actual_move": null
+      },
+      {
+        "ticker": "CRWD",
+        "filters_passed": true,
+        "whisper_edge": "+3.8%",
+        "target_price": "$340",
+        "status": "pending",
+        "actual_move": null
+      },
+      {
+        "ticker": "NVDA",
+        "filters_passed": true,
+        "whisper_edge": "+5.2%",
+        "target_price": "$950",
+        "status": "pending",
+        "actual_move": null
+      },
+      {
+        "ticker": "META",
+        "filters_passed": true,
+        "whisper_edge": "+3.0%",
+        "target_price": "$620",
+        "status": "completed",
+        "actual_move": "+4.7%"
+      }
+    ]
+  }
+}

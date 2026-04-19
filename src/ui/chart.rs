@@ -36,10 +36,7 @@ pub fn draw_chart_overlay(frame: &mut Frame, app: &App, theme: &'static Theme) {
                         .add_modifier(Modifier::BOLD),
                 )
             } else {
-                Span::styled(
-                    format!(" {} ", r.label()),
-                    Style::default().fg(theme.muted),
-                )
+                Span::styled(format!(" {} ", r.label()), Style::default().fg(theme.muted))
             }
         })
         .collect();
@@ -50,7 +47,7 @@ pub fn draw_chart_overlay(frame: &mut Frame, app: &App, theme: &'static Theme) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // range tabs
-            Constraint::Min(3),   // chart
+            Constraint::Min(3),    // chart
             Constraint::Length(1), // help bar
         ])
         .split(chart_area.inner(Margin::new(1, 1)));
@@ -116,10 +113,7 @@ fn draw_line_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
         .collect();
 
     // Compute Y bounds with padding.
-    let min_y = data
-        .iter()
-        .map(|(_, y)| *y)
-        .fold(f64::INFINITY, f64::min);
+    let min_y = data.iter().map(|(_, y)| *y).fold(f64::INFINITY, f64::min);
     let max_y = data
         .iter()
         .map(|(_, y)| *y)
@@ -134,7 +128,11 @@ fn draw_line_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
     // Determine line color: green if price went up, red if down.
     let first = data.first().map_or(0.0, |(_, y)| *y);
     let last = data.last().map_or(0.0, |(_, y)| *y);
-    let line_color = if last >= first { theme.gain } else { theme.loss };
+    let line_color = if last >= first {
+        theme.gain
+    } else {
+        theme.loss
+    };
 
     let dataset = Dataset::default()
         .marker(symbols::Marker::Braille)
@@ -153,10 +151,7 @@ fn draw_line_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
     // X-axis labels: range label.
     let x_labels = vec![
         Span::styled("", Style::default().fg(theme.muted)),
-        Span::styled(
-            app.chart_range.label(),
-            Style::default().fg(theme.muted),
-        ),
+        Span::styled(app.chart_range.label(), Style::default().fg(theme.muted)),
     ];
 
     // Change summary.
@@ -185,16 +180,8 @@ fn draw_line_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
                 .title_alignment(Alignment::Right)
                 .borders(Borders::NONE),
         )
-        .x_axis(
-            Axis::default()
-                .labels(x_labels)
-                .bounds([0.0, max_x]),
-        )
-        .y_axis(
-            Axis::default()
-                .labels(y_labels)
-                .bounds([y_lo, y_hi]),
-        );
+        .x_axis(Axis::default().labels(x_labels).bounds([0.0, max_x]))
+        .y_axis(Axis::default().labels(y_labels).bounds([y_lo, y_hi]));
 
     frame.render_widget(chart, area);
 }

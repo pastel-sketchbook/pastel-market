@@ -10,8 +10,8 @@ use tracing::{info, warn};
 use market_core::config::{self, Preferences, QcSession, Session};
 use market_core::domain::mock::MockData;
 use market_core::domain::{
-    ChartRange, FilterMode, MarketStatus, NewsItem, PricePoint, Quote, ScannerList,
-    ScreenerResult, SortMode, TopMovers, ViewMode, Watchlist,
+    ChartRange, FilterMode, MarketStatus, NewsItem, PricePoint, Quote, ScannerList, ScreenerResult,
+    SortMode, TopMovers, ViewMode, Watchlist,
 };
 use market_core::theme::{self, Theme};
 use whispers::WhisperResult;
@@ -355,9 +355,7 @@ impl App {
             }
             3 => {
                 // Chart pattern
-                self.chart_patterns
-                    .get(ticker)
-                    .map(|p| format!(" ({p})"))
+                self.chart_patterns.get(ticker).map(|p| format!(" ({p})"))
             }
             4 => {
                 // Historical beats
@@ -547,7 +545,7 @@ impl App {
         if symbols.is_empty() {
             return;
         }
-        let idx = symbols.len() - 1;
+        let idx = symbols.len().saturating_sub(1);
         let sym = symbols[idx].clone();
         worker.submit_added_symbol(sym, idx);
     }
@@ -629,10 +627,7 @@ impl App {
                     points,
                 } => {
                     // Only apply if the chart is still open for this symbol+range.
-                    if self.chart_open
-                        && self.chart_symbol == symbol
-                        && self.chart_range == range
-                    {
+                    if self.chart_open && self.chart_symbol == symbol && self.chart_range == range {
                         self.chart_data = points;
                         self.chart_loading = false;
                     }
@@ -783,8 +778,7 @@ impl App {
 
             // Open chart (Enter in Watchlist/Scanner view)
             KeyCode::Enter
-                if self.view_mode == ViewMode::Watchlist
-                    || self.view_mode == ViewMode::Scanner =>
+                if self.view_mode == ViewMode::Watchlist || self.view_mode == ViewMode::Scanner =>
             {
                 self.open_chart();
             }
@@ -1138,7 +1132,16 @@ mod tests {
                         fifty_two_week_low: 310.0,
                     }),
                 ],
-                sparkline: vec![PricePoint { timestamp: None, close: 173.0 }, PricePoint { timestamp: None, close: 175.0 }],
+                sparkline: vec![
+                    PricePoint {
+                        timestamp: None,
+                        close: 173.0,
+                    },
+                    PricePoint {
+                        timestamp: None,
+                        close: 175.0,
+                    },
+                ],
                 news: vec![NewsItem {
                     title: "Test headline".to_string(),
                     publisher: "Test".to_string(),
@@ -1709,10 +1712,7 @@ mod tests {
     fn qc_inline_value_past_beats() {
         let mut app = make_app(&["AAPL"]);
         app.past_beats.insert("AAPL".to_string(), true);
-        assert_eq!(
-            app.qc_inline_value("AAPL", 4),
-            Some(" (beats)".to_string())
-        );
+        assert_eq!(app.qc_inline_value("AAPL", 4), Some(" (beats)".to_string()));
     }
 
     #[test]

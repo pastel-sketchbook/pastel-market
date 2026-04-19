@@ -48,12 +48,22 @@ pub fn draw_detail(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
             let position =
                 ((q.regular_market_price - q.fifty_two_week_low) / range).clamp(0.0, 1.0);
             let bar_width: usize = 20;
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                clippy::cast_precision_loss
+            )]
             let marker_pos = (position * bar_width as f64).round() as usize;
             let marker_pos = marker_pos.min(bar_width);
 
             let bar: String = (0..=bar_width)
-                .map(|i| if i == marker_pos { '\u{25c6}' } else { '\u{2500}' })
+                .map(|i| {
+                    if i == marker_pos {
+                        '\u{25c6}'
+                    } else {
+                        '\u{2500}'
+                    }
+                })
                 .collect();
 
             let pct_of_range = position * 100.0;

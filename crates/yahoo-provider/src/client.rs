@@ -112,10 +112,7 @@ impl YahooClient {
 
         // Hit a known Yahoo endpoint to receive a session cookie.
         // The 404 response is expected — we only need the Set-Cookie header.
-        let _ignore = agent
-            .get(COOKIE_URL)
-            .header("User-Agent", YAHOO_UA)
-            .call();
+        let _ignore = agent.get(COOKIE_URL).header("User-Agent", YAHOO_UA).call();
 
         // Fetch the crumb token using the session cookie (with retry for 429).
         let mut crumb = String::new();
@@ -324,7 +321,9 @@ mod tests {
     #[test]
     fn stub_provider_fetch_sparkline_returns_empty() {
         let p = StubProvider;
-        let result = p.fetch_sparkline("AAPL", ChartRange::Day1).expect("should succeed");
+        let result = p
+            .fetch_sparkline("AAPL", ChartRange::Day1)
+            .expect("should succeed");
         assert!(result.is_empty());
     }
 }

@@ -93,7 +93,6 @@ pub fn heatmap_color(rank: &QuoteRank) -> Color {
     let base = 20_u8;
     let full = 140_u8;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let channel = base + (f64::from(full - base) * rank.intensity) as u8;
     if rank.is_gain {
         Color::Rgb(0, channel, 0)
@@ -163,6 +162,9 @@ pub fn refresh_indicator<'a>(is_active: bool, theme: &Theme) -> Span<'a> {
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
 pub fn spinner_frame(tick: u64) -> char {
-    const FRAMES: &[char] = &['\u{280b}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283c}', '\u{2834}', '\u{2826}', '\u{2827}', '\u{2807}', '\u{280f}'];
+    const FRAMES: &[char] = &[
+        '\u{280b}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283c}', '\u{2834}', '\u{2826}',
+        '\u{2827}', '\u{2807}', '\u{280f}',
+    ];
     FRAMES[(tick as usize) % FRAMES.len()]
 }

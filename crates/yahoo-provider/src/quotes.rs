@@ -32,10 +32,7 @@ pub fn parse_quotes_response(body: &serde_json::Value, symbols: &[String]) -> Ve
 #[must_use]
 pub fn parse_sparkline_response(body: &serde_json::Value) -> Vec<PricePoint> {
     let result = &body["spark"]["result"][0]["response"][0];
-    let timestamps = result["timestamp"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    let timestamps = result["timestamp"].as_array().cloned().unwrap_or_default();
     let closes = result["indicators"]["quote"][0]["close"]
         .as_array()
         .cloned()

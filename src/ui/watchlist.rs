@@ -66,7 +66,7 @@ pub fn build_quote_row<'a>(
         Row::new(vec![
             Cell::from(q.symbol.clone()),
             Cell::from(q.display_name().to_string()),
-            Cell::from(q.sector.clone().unwrap_or_default()),
+            Cell::from(q.sector.as_deref().unwrap_or_default().to_string()),
             Cell::from(format!("{:.2}", q.regular_market_price)),
             Cell::from(format!("{:+.2}", q.regular_market_change)).style(change_style),
             Cell::from(format_change_cell(q.regular_market_change_percent, rank))

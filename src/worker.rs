@@ -5,13 +5,11 @@
 //! results. [`App`] calls `submit_*` methods to enqueue jobs; the main
 //! loop drains results via [`Worker::try_recv`].
 
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::thread;
 
-use market_core::domain::{
-    ChartRange, NewsItem, PricePoint, Quote, ScreenerResult, ScannerList,
-};
+use market_core::domain::{ChartRange, NewsItem, PricePoint, Quote, ScannerList, ScreenerResult};
 use whispers::WhisperResult;
 use yahoo_provider::QuoteProvider;
 
@@ -23,21 +21,13 @@ use yahoo_provider::QuoteProvider;
 #[allow(clippy::large_enum_variant)]
 pub enum FetchResult {
     /// Watchlist quotes refreshed.
-    Quotes {
-        quotes: Vec<Option<Quote>>,
-    },
+    Quotes { quotes: Vec<Option<Quote>> },
     /// Market index quotes.
-    IndexQuotes {
-        quotes: Vec<Option<Quote>>,
-    },
+    IndexQuotes { quotes: Vec<Option<Quote>> },
     /// Sector ETF quotes.
-    SectorQuotes {
-        quotes: Vec<Option<Quote>>,
-    },
+    SectorQuotes { quotes: Vec<Option<Quote>> },
     /// Sparkline data for the selected symbol.
-    Sparkline {
-        points: Vec<PricePoint>,
-    },
+    Sparkline { points: Vec<PricePoint> },
     /// Chart data for the performance chart overlay.
     Chart {
         symbol: String,
@@ -45,24 +35,16 @@ pub enum FetchResult {
         points: Vec<PricePoint>,
     },
     /// News headlines.
-    News {
-        items: Vec<NewsItem>,
-    },
+    News { items: Vec<NewsItem> },
     /// Scanner quotes (Yahoo screener or trending).
     Scanner {
         quotes: Vec<Quote>,
         screener_results: Option<Vec<ScreenerResult>>,
     },
     /// Quote for a single newly-added symbol.
-    AddedSymbol {
-        quote: Option<Quote>,
-        index: usize,
-    },
+    AddedSymbol { quote: Option<Quote>, index: usize },
     /// Insider ownership percentage for a ticker.
-    InsiderOwnership {
-        ticker: String,
-        pct: f64,
-    },
+    InsiderOwnership { ticker: String, pct: f64 },
     /// Sector heat map data.
     SectorHeat {
         heat: std::collections::HashMap<String, f64>,
@@ -179,12 +161,8 @@ impl Worker {
         let client = Arc::clone(&self.client);
         thread::spawn(move || {
             let result = match client.fetch_sparkline(&symbol, ChartRange::Day1) {
-                Ok(points) => FetchResult::Sparkline {
-                    points,
-                },
-                Err(_) => FetchResult::Sparkline {
-                    points: Vec::new(),
-                },
+                Ok(points) => FetchResult::Sparkline { points },
+                Err(_) => FetchResult::Sparkline { points: Vec::new() },
             };
             let _ = tx.send(result);
         });
@@ -217,9 +195,7 @@ impl Worker {
         thread::spawn(move || {
             let result = match client.fetch_news(&symbol) {
                 Ok(items) => FetchResult::News { items },
-                Err(_) => FetchResult::News {
-                    items: Vec::new(),
-                },
+                Err(_) => FetchResult::News { items: Vec::new() },
             };
             let _ = tx.send(result);
         });
@@ -231,46 +207,42 @@ impl Worker {
         let client = Arc::clone(&self.client);
         thread::spawn(move || {
             let result = match scanner_list {
-                ScannerList::Trending => {
-                    match client.fetch_trending() {
-                        Ok(syms) if !syms.is_empty() => match client.fetch_quotes(&syms) {
-                            Ok(quotes) => FetchResult::Scanner {
-                                quotes: quotes.into_iter().flatten().collect(),
-                                screener_results: None,
-                            },
-                            Err(e) => FetchResult::Error {
-                                context: "scanner",
-                                message: e.to_string(),
-                            },
-                        },
-                        Ok(_) => FetchResult::Scanner {
-                            quotes: Vec::new(),
+                ScannerList::Trending => match client.fetch_trending() {
+                    Ok(syms) if !syms.is_empty() => match client.fetch_quotes(&syms) {
+                        Ok(quotes) => FetchResult::Scanner {
+                            quotes: quotes.into_iter().flatten().collect(),
                             screener_results: None,
                         },
                         Err(e) => FetchResult::Error {
                             context: "scanner",
                             message: e.to_string(),
                         },
-                    }
-                }
-                ScannerList::Fundamentals => {
-                    match finviz_scraper::screener::fetch_raw() {
-                        Ok(results) => {
-                            let quotes = results
-                                .iter()
-                                .map(finviz_scraper::screener::screener_result_to_quote)
-                                .collect();
-                            FetchResult::Scanner {
-                                quotes,
-                                screener_results: Some(results),
-                            }
+                    },
+                    Ok(_) => FetchResult::Scanner {
+                        quotes: Vec::new(),
+                        screener_results: None,
+                    },
+                    Err(e) => FetchResult::Error {
+                        context: "scanner",
+                        message: e.to_string(),
+                    },
+                },
+                ScannerList::Fundamentals => match finviz_scraper::screener::fetch_raw() {
+                    Ok(results) => {
+                        let quotes = results
+                            .iter()
+                            .map(finviz_scraper::screener::screener_result_to_quote)
+                            .collect();
+                        FetchResult::Scanner {
+                            quotes,
+                            screener_results: Some(results),
                         }
-                        Err(e) => FetchResult::Error {
-                            context: "scanner",
-                            message: e.to_string(),
-                        },
                     }
-                }
+                    Err(e) => FetchResult::Error {
+                        context: "scanner",
+                        message: e.to_string(),
+                    },
+                },
                 _ => match client.fetch_screener(scanner_list.screener_id()) {
                     Ok(quotes) => FetchResult::Scanner {
                         quotes,
@@ -310,10 +282,7 @@ impl Worker {
         let tx = self.tx.clone();
         thread::spawn(move || {
             let result = match finviz_scraper::detail::fetch_insider_ownership(&ticker) {
-                Ok(pct) => FetchResult::InsiderOwnership {
-                    ticker,
-                    pct,
-                },
+                Ok(pct) => FetchResult::InsiderOwnership { ticker, pct },
                 Err(e) => FetchResult::Error {
                     context: "insider ownership",
                     message: e.to_string(),
@@ -337,10 +306,7 @@ impl Worker {
         let tx = self.tx.clone();
         thread::spawn(move || {
             let result = match whispers::fetch(&ticker) {
-                Ok(w) => FetchResult::Whisper {
-                    ticker,
-                    result: w,
-                },
+                Ok(w) => FetchResult::Whisper { ticker, result: w },
                 Err(e) => FetchResult::Error {
                     context: "whisper",
                     message: e.to_string(),

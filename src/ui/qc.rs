@@ -46,8 +46,11 @@ fn draw_finviz_panel(frame: &mut Frame, app: &App, theme: &Theme, title_style: S
     if count > 0 {
         items.push(ListItem::new(""));
         items.push(
-            ListItem::new(format!(" {count} stocks pass filters"))
-                .style(Style::default().fg(theme.status).add_modifier(Modifier::BOLD)),
+            ListItem::new(format!(" {count} stocks pass filters")).style(
+                Style::default()
+                    .fg(theme.status)
+                    .add_modifier(Modifier::BOLD),
+            ),
         );
     }
 
@@ -144,9 +147,7 @@ fn draw_qc_checklist(frame: &mut Frame, app: &App, theme: &Theme, title_style: S
                     ""
                 };
 
-                let value_str = app
-                    .qc_inline_value(&ticker, i)
-                    .unwrap_or_default();
+                let value_str = app.qc_inline_value(&ticker, i).unwrap_or_default();
 
                 let style = if app.focus == Focus::QcChecklist && i == app.selected_qc {
                     let fg = if checked || auto_checked {

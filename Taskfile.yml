@@ -104,6 +104,24 @@ tasks:
     cmds:
       - ./scripts/version.sh tag
 
+  # --- Data Sync ---
+  sync:cik:
+    desc: "Re-download SEC ticker→CIK map into data/cik_map.ron"
+    cmds:
+      - |
+        curl -sL -H "User-Agent: pastel-market/0.4.0 contact@example.com" \
+          "https://www.sec.gov/files/company_tickers.json" | \
+          python3 -c "
+        import json, sys
+        data = json.load(sys.stdin)
+        pairs = sorted((e['ticker'].upper(), str(e['cik_str']).zfill(10)) for e in data.values())
+        lines = [f'    \"{t}\": \"{c}\"' for t, c in pairs]
+        print('{')
+        print(',\n'.join(lines) + ',')
+        print('}')
+        " > data/cik_map.ron
+      - echo "Updated data/cik_map.ron ($(wc -l < data/cik_map.ron) lines)"
+
   # --- Release ---
   release:
     desc: "Bump patch, commit, tag, and push"

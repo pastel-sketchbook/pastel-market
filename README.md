@@ -38,7 +38,8 @@ Monitor markets. Screen stocks. Gauge earnings. Inspect quality. Signal convicti
 - **News reader** — per-stock news headlines with publisher, age, and inline
   summary toggle
 - **SEC filings** — recent EDGAR filings (10-K, 10-Q, 8-K, Form 4) with
-  color-coded form types, fetched directly from SEC EDGAR API
+  color-coded form types; ticker→CIK mapping embedded at compile time (~10K
+  tickers) for instant resolution without runtime downloads
 - **16 themes** — 8 dark + 8 light, cycled with `t`, persisted across sessions
 - **Non-blocking UI** — all HTTP fetches run on background threads; the event
   loop never stalls
@@ -102,6 +103,9 @@ pastel-market/
 │   ├── finviz-scraper/    Screener, insider detail, sector ETF performance
 │   ├── yahoo-provider/    Cookie+crumb auth, QuoteProvider trait
 │   └── whispers/          Earnings Whispers (feature-gated)
+├── data/
+│   ├── cik_map.ron        Embedded ticker→CIK map (~10K tickers)
+│   └── mock.json          Fallback data for offline mode
 ├── src/
 │   ├── main.rs            Terminal lifecycle + event loop
 │   ├── app.rs             App state, key handlers, data refresh

@@ -97,6 +97,7 @@ pastel-market/
 │       └── footer.rs           # Keybindings bar with theme name
 │
 ├── data/
+│   ├── cik_map.ron             # Embedded ticker→CIK map (~10K tickers, from SEC EDGAR)
 │   └── mock.json               # Fallback data for offline/failure modes
 ├── tests/
 │   ├── fixture_parsing.rs      # Integration tests for HTML parsers

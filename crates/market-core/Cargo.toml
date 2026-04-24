@@ -10,6 +10,7 @@ chrono.workspace = true
 directories.workspace = true
 quick-xml.workspace = true
 ratatui.workspace = true
+ron.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

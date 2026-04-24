@@ -4,58 +4,55 @@
 //! submissions API. No authentication required — only a descriptive
 //! `User-Agent` header (SEC policy).
 //!
-//! The CIK mapping (~2 MB JSON) is cached in-memory after the first
-//! download. Call [`warm_cik_cache`] at startup to avoid first-use
-//! latency.
+//! CIK resolution uses an embedded RON map (`data/cik_map.ron`)
+//! compiled into the binary via `include_str!`. No runtime download
+//! is needed for ticker → CIK mapping.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tracing::debug;
 
 use crate::domain::SecFiling;
-use crate::http::{RetryConfig, USER_AGENT, call_with_retry_cfg};
+use crate::http::USER_AGENT;
 
 /// EDGAR company filings endpoint (submissions).
 const SUBMISSIONS_URL: &str = "https://data.sec.gov/submissions/CIK";
 
-/// Fast retry: 1 attempt, no backoff. SEC data is supplementary and
-/// should not slow down the main UI.
-const SEC_RETRY: RetryConfig = RetryConfig {
-    max_retries: 1,
-    backoff_base_ms: 0,
-};
+/// Timeout for SEC HTTP requests.
+const SEC_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Global in-memory CIK cache: ticker → zero-padded CIK string.
-static CIK_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+/// Embedded CIK map: ticker → zero-padded CIK string.
+/// Generated from <https://www.sec.gov/files/company_tickers.json>.
+const CIK_MAP_RON: &str = include_str!("../../../data/cik_map.ron");
 
-fn cik_cache() -> &'static Mutex<HashMap<String, String>> {
-    CIK_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+/// Parsed CIK map, lazily initialized on first use.
+static CIK_MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
+
+/// Get the parsed CIK map, initializing it once from the embedded RON.
+fn cik_map() -> &'static HashMap<String, String> {
+    CIK_MAP.get_or_init(|| {
+        ron::from_str(CIK_MAP_RON).unwrap_or_else(|e| {
+            // Safety: the embedded RON is generated at build time and
+            // validated by tests. If it's somehow corrupt, return empty
+            // map and let resolve_cik fail with a clear error.
+            tracing::error!(error = %e, "failed to parse embedded CIK map");
+            HashMap::new()
+        })
+    })
 }
 
-/// Pre-warm the CIK cache by downloading the ticker map from SEC.
-///
-/// Call this once at startup on a background thread so that subsequent
-/// `fetch_sec_filings` calls can skip the 2 MB download.
-///
-/// # Errors
-///
-/// Returns an error if the SEC ticker map cannot be fetched or parsed.
-pub fn warm_cik_cache() -> Result<()> {
-    let map = download_cik_map()?;
-    let mut cache = cik_cache()
-        .lock()
-        .map_err(|e| anyhow::anyhow!("CIK cache lock poisoned: {e}"))?;
-    *cache = map;
-    debug!(count = cache.len(), "CIK cache warmed");
-    Ok(())
+/// Build a ureq agent with a short timeout for SEC requests.
+fn sec_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(SEC_TIMEOUT))
+        .build()
+        .new_agent()
 }
 
 /// Fetch recent SEC filings for the given ticker.
-///
-/// Resolves the CIK from cache (or downloads the mapping if not cached),
-/// then fetches the latest filings from the submissions endpoint.
 ///
 /// # Errors
 ///
@@ -68,76 +65,35 @@ pub fn fetch_sec_filings(ticker: &str) -> Result<Vec<SecFiling>> {
     Ok(filings)
 }
 
-/// Download and parse the full ticker → CIK mapping from SEC.
-fn download_cik_map() -> Result<HashMap<String, String>> {
-    let mut body = call_with_retry_cfg(
-        || {
-            ureq::get("https://www.sec.gov/files/company_tickers.json")
-                .header("User-Agent", USER_AGENT)
-                .header("Accept", "application/json")
-        },
-        &SEC_RETRY,
-    )
-    .context("SEC company tickers request failed")?;
-
-    let json: serde_json::Value = body
-        .read_json()
-        .context("failed to parse SEC company tickers JSON")?;
-
-    let mut map = HashMap::new();
-    if let Some(obj) = json.as_object() {
-        for (_key, entry) in obj {
-            if let (Some(ticker), Some(cik)) =
-                (entry["ticker"].as_str(), entry["cik_str"].as_u64())
-            {
-                map.insert(ticker.to_uppercase(), format!("{cik:010}"));
-            }
-        }
-    }
-    debug!(count = map.len(), "parsed SEC company tickers");
-    Ok(map)
-}
+// ---------------------------------------------------------------------------
+// CIK resolution
+// ---------------------------------------------------------------------------
 
 /// Resolve a ticker symbol to a zero-padded CIK.
 ///
-/// First checks the in-memory cache. If not found, downloads the full
-/// mapping (populating the cache for future lookups).
+/// Looks up the embedded CIK map (compiled into binary, ~10K tickers).
 fn resolve_cik(ticker: &str) -> Result<String> {
     let upper = ticker.to_uppercase();
-
-    // Check cache first.
-    {
-        let cache = cik_cache()
-            .lock()
-            .map_err(|e| anyhow::anyhow!("CIK cache lock poisoned: {e}"))?;
-        if let Some(cik) = cache.get(&upper) {
-            return Ok(cik.clone());
-        }
-    }
-
-    // Cache miss — download and populate.
-    let map = download_cik_map()?;
-    let result = map.get(&upper).cloned();
-    let mut cache = cik_cache()
-        .lock()
-        .map_err(|e| anyhow::anyhow!("CIK cache lock poisoned: {e}"))?;
-    *cache = map;
-
-    result.ok_or_else(|| anyhow::anyhow!("ticker {ticker} not found in SEC company tickers"))
+    cik_map()
+        .get(&upper)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("ticker {ticker} not found in embedded CIK map"))
 }
+
+// ---------------------------------------------------------------------------
+// Filings fetch + parse
+// ---------------------------------------------------------------------------
 
 /// Fetch filings from the EDGAR submissions endpoint for a given CIK.
 fn fetch_filings_by_cik(cik: &str) -> Result<Vec<SecFiling>> {
     let url = format!("{SUBMISSIONS_URL}{cik}.json");
-    let mut body = call_with_retry_cfg(
-        || {
-            ureq::get(&url)
-                .header("User-Agent", USER_AGENT)
-                .header("Accept", "application/json")
-        },
-        &SEC_RETRY,
-    )
-    .context("SEC submissions request failed")?;
+    let mut body = sec_agent()
+        .get(&url)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/json")
+        .call()
+        .context("SEC submissions request failed")?
+        .into_body();
 
     let json: serde_json::Value = body
         .read_json()
@@ -147,10 +103,6 @@ fn fetch_filings_by_cik(cik: &str) -> Result<Vec<SecFiling>> {
 }
 
 /// Parse the EDGAR submissions JSON into `SecFiling` items.
-///
-/// The submissions JSON has `recentFilings` with parallel arrays:
-/// `form`, `filingDate`, `primaryDocument`, `accessionNumber`,
-/// `primaryDocDescription`.
 fn parse_submissions(json: &serde_json::Value, cik: &str) -> Result<Vec<SecFiling>> {
     let recent = &json["filings"]["recent"];
 
@@ -169,7 +121,7 @@ fn parse_submissions(json: &serde_json::Value, cik: &str) -> Result<Vec<SecFilin
     let descriptions = recent["primaryDocDescription"].as_array();
 
     let mut filings = Vec::new();
-    let limit = forms.len().min(20); // Latest 20 filings.
+    let limit = forms.len().min(20);
 
     for i in 0..limit {
         let form_type = forms[i].as_str().unwrap_or("").to_string();
@@ -182,7 +134,6 @@ fn parse_submissions(json: &serde_json::Value, cik: &str) -> Result<Vec<SecFilin
             .unwrap_or("")
             .to_string();
 
-        // Build the direct link to the filing document.
         let accession_nodash = accession_raw.replace('-', "");
         let link = if doc.is_empty() {
             format!(
@@ -214,6 +165,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn embedded_cik_map_parses() {
+        let map = cik_map();
+        assert!(
+            map.len() > 10_000,
+            "expected >10K tickers, got {}",
+            map.len()
+        );
+    }
+
+    #[test]
+    fn resolve_common_tickers() {
+        assert_eq!(resolve_cik("AAPL").unwrap(), "0000320193");
+        assert_eq!(resolve_cik("MSFT").unwrap(), "0000789019");
+        assert_eq!(resolve_cik("TSLA").unwrap(), "0001318605");
+        assert_eq!(resolve_cik("NVDA").unwrap(), "0001045810");
+    }
+
+    #[test]
+    fn resolve_cik_case_insensitive() {
+        assert_eq!(resolve_cik("aapl").unwrap(), "0000320193");
+        assert_eq!(resolve_cik("Msft").unwrap(), "0000789019");
+    }
+
+    #[test]
+    fn resolve_unknown_ticker_fails() {
+        assert!(resolve_cik("ZZZZZZ999").is_err());
+    }
+
+    #[test]
     fn parse_submissions_extracts_filings() {
         let json = serde_json::json!({
             "filings": {
@@ -234,7 +214,6 @@ mod tests {
         assert_eq!(filings[0].description, "Annual Report");
         assert!(filings[0].link.contains("aapl-20240928.htm"));
         assert_eq!(filings[1].form_type, "10-Q");
-        // 8-K with empty doc should get a fallback link.
         assert!(filings[2].link.contains("browse-edgar"));
     }
 
@@ -255,29 +234,5 @@ mod tests {
         assert_eq!(filings.len(), 1);
         assert_eq!(filings[0].form_type, "4");
         assert!(filings[0].description.is_empty());
-    }
-
-    #[test]
-    fn download_cik_map_parses_sample_json() {
-        // Unit test with synthetic data — doesn't hit the network.
-        let json = serde_json::json!({
-            "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc"},
-            "1": {"cik_str": 789019, "ticker": "MSFT", "title": "Microsoft Corp"}
-        });
-
-        // Simulate parsing logic.
-        let mut map = HashMap::new();
-        if let Some(obj) = json.as_object() {
-            for (_key, entry) in obj {
-                if let (Some(ticker), Some(cik)) =
-                    (entry["ticker"].as_str(), entry["cik_str"].as_u64())
-                {
-                    map.insert(ticker.to_uppercase(), format!("{cik:010}"));
-                }
-            }
-        }
-        assert_eq!(map.get("AAPL"), Some(&"0000320193".to_string()));
-        assert_eq!(map.get("MSFT"), Some(&"0000789019".to_string()));
-        assert_eq!(map.len(), 2);
     }
 }

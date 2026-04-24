@@ -93,18 +93,9 @@ pub struct Worker {
 
 impl Worker {
     /// Create a new worker wrapping the given provider.
-    ///
-    /// Also kicks off a background thread to pre-warm the SEC CIK cache
-    /// so that the first chart-open doesn't pay the ~2 MB download cost.
     #[must_use]
     pub fn new(client: Arc<dyn QuoteProvider>) -> Self {
         let (tx, rx) = mpsc::channel();
-        // Pre-warm CIK cache in the background.
-        thread::spawn(|| {
-            if let Err(e) = market_core::sec::warm_cik_cache() {
-                tracing::debug!(error = %e, "CIK cache pre-warm failed (will retry on demand)");
-            }
-        });
         Self { client, tx, rx }
     }
 

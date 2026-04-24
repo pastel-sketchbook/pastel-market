@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use tracing::{info, warn};
 
 use market_core::config::{self, Preferences, QcSession, Session};
@@ -89,6 +89,9 @@ pub struct App {
     pub sparkline_cache: HashMap<String, Vec<PricePoint>>,
     pub status_message: String,
     pub should_quit: bool,
+
+    // -- Help overlay --
+    pub show_help: bool,
 
     // -- Market data (from Reins Market) --
     pub index_quotes: Vec<Option<Quote>>,
@@ -195,6 +198,7 @@ impl App {
             sparkline_cache: HashMap::new(),
             status_message: String::new(),
             should_quit: false,
+            show_help: false,
             index_quotes: Vec::new(),
             sector_quotes: Vec::new(),
             market_status: MarketStatus::default(),
@@ -250,6 +254,7 @@ impl App {
             sparkline_cache: HashMap::new(),
             status_message: String::new(),
             should_quit: false,
+            show_help: false,
             index_quotes: Vec::new(),
             sector_quotes: Vec::new(),
             market_status: MarketStatus::default(),
@@ -732,6 +737,19 @@ impl App {
 
     // -- Key handling --------------------------------------------------------
 
+    /// Dispatch a mouse event.
+    pub fn handle_mouse(&mut self, mouse: MouseEvent) {
+        // Ignore mouse in overlays.
+        if self.chart_open || self.show_help {
+            return;
+        }
+        match mouse.kind {
+            MouseEventKind::ScrollDown => self.navigate_table_down(),
+            MouseEventKind::ScrollUp => self.navigate_table_up(),
+            _ => {}
+        }
+    }
+
     /// Dispatch a key event to the appropriate handler.
     pub fn handle_key(&mut self, key: KeyEvent) {
         // Ctrl+C always quits.
@@ -743,6 +761,15 @@ impl App {
         // Chart overlay intercepts keys when open.
         if self.chart_open {
             self.handle_chart_key(key);
+            return;
+        }
+
+        // Help overlay intercepts keys when open.
+        if self.show_help {
+            match key.code {
+                KeyCode::Char('?') | KeyCode::Esc => self.show_help = false,
+                _ => {}
+            }
             return;
         }
 
@@ -769,6 +796,9 @@ impl App {
 
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+
+            // Help overlay
+            KeyCode::Char('?') => self.show_help = true,
 
             // Navigation
             KeyCode::Char('j') | KeyCode::Down => match self.focus {
@@ -1215,6 +1245,12 @@ mod tests {
                         regular_market_day_low: 172.5,
                         fifty_two_week_high: 199.0,
                         fifty_two_week_low: 124.0,
+                        pre_market_price: None,
+                        pre_market_change: None,
+                        pre_market_change_percent: None,
+                        post_market_price: None,
+                        post_market_change: None,
+                        post_market_change_percent: None,
                     }),
                     Some(Quote {
                         symbol: "MSFT".to_string(),
@@ -1231,6 +1267,12 @@ mod tests {
                         regular_market_day_low: 399.0,
                         fifty_two_week_high: 430.0,
                         fifty_two_week_low: 310.0,
+                        pre_market_price: None,
+                        pre_market_change: None,
+                        pre_market_change_percent: None,
+                        post_market_price: None,
+                        post_market_change: None,
+                        post_market_change_percent: None,
                     }),
                 ],
                 sparkline: vec![

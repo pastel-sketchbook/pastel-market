@@ -4,6 +4,7 @@ mod chart;
 mod detail;
 mod footer;
 mod header;
+mod help;
 pub mod helpers;
 mod qc;
 mod scanner;
@@ -52,6 +53,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // Chart overlay on top of everything.
     if app.chart_open {
         chart::draw_chart_overlay(frame, app, theme);
+    }
+
+    // Help overlay on top of everything.
+    if app.show_help {
+        help::draw_help_overlay(frame, theme);
     }
 }
 

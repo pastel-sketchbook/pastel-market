@@ -31,7 +31,7 @@ pub fn draw_footer(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let left = Paragraph::new(Line::from(spans));
 
     // Right-aligned: refresh indicator + theme name + version.
-    let indicator = refresh_indicator(app.market_status.is_active(), theme);
+    let indicator = refresh_indicator(app.market_status.is_active(), app.ticks_since_refresh, theme);
     let theme_name = app.theme().name;
     let version = env!("CARGO_PKG_VERSION");
     let right_spans = vec![
@@ -82,6 +82,9 @@ fn build_normal_footer<'a>(app: &App, theme: &'a Theme, sep: &Span<'a>) -> Vec<S
         sep.clone(),
         key_badge("n", theme),
         muted_span(" News ", theme),
+        sep.clone(),
+        key_badge("?", theme),
+        muted_span(" Help ", theme),
     ];
 
     // Context-dependent keys.

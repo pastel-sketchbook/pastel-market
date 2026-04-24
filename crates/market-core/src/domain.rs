@@ -19,6 +19,18 @@ pub struct Quote {
     pub regular_market_day_low: f64,
     pub fifty_two_week_high: f64,
     pub fifty_two_week_low: f64,
+    /// Pre-market price (available when `market_state` is `PRE` or `REGULAR`).
+    pub pre_market_price: Option<f64>,
+    /// Pre-market change from previous close.
+    pub pre_market_change: Option<f64>,
+    /// Pre-market change percent.
+    pub pre_market_change_percent: Option<f64>,
+    /// Post-market (after-hours) price.
+    pub post_market_price: Option<f64>,
+    /// Post-market change from regular close.
+    pub post_market_change: Option<f64>,
+    /// Post-market change percent.
+    pub post_market_change_percent: Option<f64>,
 }
 
 impl Quote {
@@ -414,6 +426,48 @@ impl fmt::Display for SortMode {
             Self::Symbol => write!(f, "Symbol"),
         }
     }
+}
+
+/// Sort and filter a flat list of quotes, returning indices into the original slice.
+#[must_use]
+pub fn sorted_filtered_indices(
+    quotes: &[Quote],
+    sort: SortMode,
+    filter: FilterMode,
+) -> Vec<usize> {
+    let mut indices: Vec<usize> = (0..quotes.len())
+        .filter(|&i| filter.matches(&quotes[i]))
+        .collect();
+
+    match sort {
+        SortMode::Default => {}
+        SortMode::ChangeDesc => indices.sort_by(|&a, &b| {
+            quotes[b]
+                .regular_market_change_percent
+                .partial_cmp(&quotes[a].regular_market_change_percent)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        SortMode::ChangeAsc => indices.sort_by(|&a, &b| {
+            quotes[a]
+                .regular_market_change_percent
+                .partial_cmp(&quotes[b].regular_market_change_percent)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        SortMode::PriceDesc => indices.sort_by(|&a, &b| {
+            quotes[b]
+                .regular_market_price
+                .partial_cmp(&quotes[a].regular_market_price)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        SortMode::VolumeDesc => {
+            indices.sort_by(|&a, &b| quotes[b].regular_market_volume.cmp(&quotes[a].regular_market_volume));
+        }
+        SortMode::Symbol => {
+            indices.sort_by(|&a, &b| quotes[a].symbol.cmp(&quotes[b].symbol));
+        }
+    }
+
+    indices
 }
 
 /// A single stock in the top-movers list.

@@ -32,7 +32,7 @@ fn main() -> Result<()> {
     // Terminal setup.
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, crossterm::event::EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -46,7 +46,11 @@ fn main() -> Result<()> {
 
     // Restore terminal unconditionally.
     terminal::disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        crossterm::event::DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     info!("pastel-market exiting");
@@ -68,6 +72,9 @@ fn run_loop(
         match events.next()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
                 app.handle_key(key);
+            }
+            Event::Mouse(mouse) => {
+                app.handle_mouse(mouse);
             }
             Event::Tick => {
                 app.on_tick();

@@ -187,6 +187,12 @@ pub fn screener_result_to_quote(sr: &ScreenerResult) -> Quote {
         regular_market_day_low: price,
         fifty_two_week_high: 0.0,
         fifty_two_week_low: 0.0,
+        pre_market_price: None,
+        pre_market_change: None,
+        pre_market_change_percent: None,
+        post_market_price: None,
+        post_market_change: None,
+        post_market_change_percent: None,
     }
 }
 

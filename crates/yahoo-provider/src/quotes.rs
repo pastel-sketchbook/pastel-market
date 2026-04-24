@@ -148,6 +148,12 @@ pub fn parse_quote(value: &serde_json::Value) -> Option<Quote> {
         regular_market_day_low: value["regularMarketDayLow"].as_f64().unwrap_or(0.0),
         fifty_two_week_high: value["fiftyTwoWeekHigh"].as_f64().unwrap_or(0.0),
         fifty_two_week_low: value["fiftyTwoWeekLow"].as_f64().unwrap_or(0.0),
+        pre_market_price: value["preMarketPrice"].as_f64(),
+        pre_market_change: value["preMarketChange"].as_f64(),
+        pre_market_change_percent: value["preMarketChangePercent"].as_f64(),
+        post_market_price: value["postMarketPrice"].as_f64(),
+        post_market_change: value["postMarketChange"].as_f64(),
+        post_market_change_percent: value["postMarketChangePercent"].as_f64(),
     })
 }
 

@@ -124,13 +124,27 @@ pub fn active_color(any_passed: bool, theme: &Theme) -> Color {
     }
 }
 
-/// Refresh indicator span.
+/// Refresh indicator span with countdown to next refresh.
 #[must_use]
-pub fn refresh_indicator<'a>(is_active: bool, theme: &Theme) -> Span<'a> {
+#[allow(clippy::cast_possible_truncation)]
+pub fn refresh_indicator<'a>(is_active: bool, ticks_since_refresh: u32, theme: &Theme) -> Span<'a> {
+    // 250ms per tick.
+    let threshold = if is_active { 120_u32 } else { 1200_u32 };
+    let remaining_ticks = threshold.saturating_sub(ticks_since_refresh);
+    #[allow(clippy::cast_sign_loss)]
+    let remaining_secs = (f64::from(remaining_ticks) * 0.25).ceil() as u32;
     if is_active {
-        Span::styled(" ⟳ 30s ", Style::default().fg(theme.accent))
+        Span::styled(
+            format!(" \u{27f3} {remaining_secs}s "),
+            Style::default().fg(theme.accent),
+        )
     } else {
-        Span::styled(" ⏸ 5m ", Style::default().fg(theme.muted))
+        let mins = remaining_secs / 60;
+        let secs = remaining_secs % 60;
+        Span::styled(
+            format!(" \u{23f8} {mins}m{secs:02}s "),
+            Style::default().fg(theme.muted),
+        )
     }
 }
 

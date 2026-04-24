@@ -6,7 +6,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Table};
 
 use crate::app::App;
-use market_core::domain::{Quote, rank_by_change};
+use market_core::domain::{FilterMode, Quote, SortMode, rank_by_change, sorted_filtered_indices};
 use market_core::theme::Theme;
 
 use super::helpers::{highlight_style, stripe_style};
@@ -19,17 +19,25 @@ pub fn draw_scanner_table(frame: &mut Frame, app: &mut App, theme: &Theme, area:
     let as_options: Vec<Option<Quote>> = app.scanner_quotes.iter().cloned().map(Some).collect();
     let ranks = rank_by_change(&as_options, 3);
 
-    let rows: Vec<ratatui::widgets::Row> = if app.scanner_quotes.is_empty() {
-        vec![empty_state_row("No results — press [r] to refresh", theme)]
+    let filtered = sorted_filtered_indices(&app.scanner_quotes, app.sort_mode, app.filter_mode);
+
+    let rows: Vec<ratatui::widgets::Row> = if filtered.is_empty() {
+        let msg = if app.scanner_quotes.is_empty() {
+            "No results — press [r] to refresh"
+        } else {
+            "No matches for current filter"
+        };
+        vec![empty_state_row(msg, theme)]
     } else {
-        app.scanner_quotes
+        filtered
             .iter()
             .enumerate()
-            .map(|(row_idx, q)| {
+            .map(|(row_idx, &orig_idx)| {
+                let q = &app.scanner_quotes[orig_idx];
                 let row = build_quote_row(
                     Some(q),
                     Some(q.symbol.as_str()),
-                    ranks.get(row_idx).and_then(Option::as_ref),
+                    ranks.get(orig_idx).and_then(Option::as_ref),
                     theme,
                     None,
                 );
@@ -38,14 +46,31 @@ pub fn draw_scanner_table(frame: &mut Frame, app: &mut App, theme: &Theme, area:
             .collect()
     };
 
-    let title = format!(" Scanner: {} ", app.scanner_list);
+    let sort_label = if app.sort_mode == SortMode::Default {
+        String::new()
+    } else {
+        format!(" [{}]", app.sort_mode)
+    };
+    let filter_label = if app.filter_mode == FilterMode::All {
+        String::new()
+    } else {
+        format!(" <{}>", app.filter_mode)
+    };
+
+    let title = format!(" Scanner: {}{sort_label}{filter_label} ", app.scanner_list);
     let title_style = Style::default()
         .fg(theme.accent)
         .add_modifier(Modifier::BOLD);
 
-    let selected = app
-        .scanner_selected
-        .min(app.scanner_quotes.len().saturating_sub(1));
+    let selected = if filtered.is_empty() {
+        0
+    } else {
+        // Map scanner_selected (original index) to filtered position.
+        filtered
+            .iter()
+            .position(|&i| i == app.scanner_selected)
+            .unwrap_or(0)
+    };
 
     let table = Table::new(rows, TABLE_WIDTHS)
         .header(header)

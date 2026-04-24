@@ -13,6 +13,7 @@ use market_core::theme::Theme;
 use super::helpers::format_volume;
 
 /// Render the detail pane for the selected quote.
+#[allow(clippy::too_many_lines)]
 pub fn draw_detail(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let label_style = Style::default().fg(theme.accent);
 
@@ -41,6 +42,28 @@ pub fn draw_detail(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
                 Span::raw(format_volume(q.regular_market_volume)),
             ]),
         ];
+
+        // Pre/Post market prices when available.
+        if let (Some(price), Some(chg_pct)) =
+            (q.pre_market_price, q.pre_market_change_percent)
+        {
+            let color = if chg_pct >= 0.0 { theme.gain } else { theme.loss };
+            lines.push(Line::from(vec![
+                Span::styled("Pre-Mkt: ", label_style),
+                Span::raw(format!("{price:.2}")),
+                Span::styled(format!(" ({chg_pct:+.2}%)"), Style::default().fg(color)),
+            ]));
+        }
+        if let (Some(price), Some(chg_pct)) =
+            (q.post_market_price, q.post_market_change_percent)
+        {
+            let color = if chg_pct >= 0.0 { theme.gain } else { theme.loss };
+            lines.push(Line::from(vec![
+                Span::styled("After-Hrs: ", label_style),
+                Span::raw(format!("{price:.2}")),
+                Span::styled(format!(" ({chg_pct:+.2}%)"), Style::default().fg(color)),
+            ]));
+        }
 
         // 52-week range bar
         let range = q.fifty_two_week_high - q.fifty_two_week_low;

@@ -7,13 +7,15 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{self, Event as CrosstermEvent, KeyEvent};
+use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
 
 /// Application-level events.
 #[derive(Debug)]
 pub enum Event {
     /// A key was pressed.
     Key(KeyEvent),
+    /// A mouse event occurred.
+    Mouse(MouseEvent),
     /// The terminal was resized to (columns, rows).
     #[allow(dead_code)]
     Resize(u16, u16),
@@ -87,6 +89,11 @@ impl EventHandler {
                         }
                         Some(CrosstermEvent::Resize(w, h))
                             if tx.send(Event::Resize(w, h)).is_err() =>
+                        {
+                            return;
+                        }
+                        Some(CrosstermEvent::Mouse(m))
+                            if tx.send(Event::Mouse(m)).is_err() =>
                         {
                             return;
                         }

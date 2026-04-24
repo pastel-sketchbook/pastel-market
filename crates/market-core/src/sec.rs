@@ -48,8 +48,8 @@ fn cik_map() -> &'static HashMap<String, String> {
 /// SEC EDGAR fair access policy requires a contact email in the User-Agent.
 /// Reads `SEC_CONTACT_EMAIL` env var; falls back to `user@example.com`.
 fn sec_user_agent() -> String {
-    let email = std::env::var("SEC_CONTACT_EMAIL")
-        .unwrap_or_else(|_| "user@example.com".to_owned());
+    let email =
+        std::env::var("SEC_CONTACT_EMAIL").unwrap_or_else(|_| "user@example.com".to_owned());
     format!("pastel-market/{} ({email})", env!("CARGO_PKG_VERSION"))
 }
 
@@ -260,10 +260,7 @@ fn strip_html_to_text(html: &str) -> String {
             }
             '&' if !in_tag => {
                 // Decode common HTML entities.
-                let entity: String = chars
-                    .by_ref()
-                    .take_while(|&ch| ch != ';')
-                    .collect();
+                let entity: String = chars.by_ref().take_while(|&ch| ch != ';').collect();
                 match entity.as_str() {
                     "amp" => out.push('&'),
                     "lt" => out.push('<'),

@@ -394,9 +394,9 @@ fn draw_sec_list(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect
             // Color-code by filing type.
             let form_color = match filing.form_type.as_str() {
                 "10-K" => Color::Rgb(181, 234, 215), // green pastel
-                "10-Q" => Color::Rgb(155, 207, 232),  // blue pastel
-                "8-K" => Color::Rgb(255, 218, 193),   // orange pastel
-                "4" => Color::Rgb(199, 178, 232),      // purple pastel
+                "10-Q" => Color::Rgb(155, 207, 232), // blue pastel
+                "8-K" => Color::Rgb(255, 218, 193),  // orange pastel
+                "4" => Color::Rgb(199, 178, 232),    // purple pastel
                 _ => theme.fg,
             };
 
@@ -708,7 +708,7 @@ fn build_x_labels(
     (0..count)
         .map(|i| {
             let idx = if i == segments {
-                len - 1
+                len.saturating_sub(1)
             } else {
                 i * len / segments
             };

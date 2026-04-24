@@ -111,9 +111,7 @@ pub fn parse_rss(xml: &str) -> Vec<NewsItem> {
                             source.clone()
                         };
                         let clean = clean_title(&title, &clean_src);
-                        let raw_desc = raw_descriptions
-                            .get(item_idx)
-                            .map_or("", String::as_str);
+                        let raw_desc = raw_descriptions.get(item_idx).map_or("", String::as_str);
                         let summary = clean_summary(raw_desc, &clean, &clean_src);
                         let publish_time = parse_rfc2822_to_epoch(&pub_date);
                         items.push(NewsItem {
@@ -263,10 +261,7 @@ fn clean_summary(raw_desc: &str, title: &str, publisher: &str) -> String {
         trimmed
     };
 
-    let cleaned = remainder
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let cleaned = remainder.split_whitespace().collect::<Vec<_>>().join(" ");
 
     // If stripping title+publisher left nothing, there's no real
     // summary content — return empty so the UI can handle it.
@@ -356,7 +351,10 @@ mod tests {
         // Simulates Google News description with entity-encoded HTML.
         let input = "&lt;a href=\"x\"&gt;Headline&lt;/a&gt;&amp;nbsp;&lt;font color=\"#6f6f6f\"&gt;Reuters&lt;/font&gt;";
         let result = clean_html(input);
-        assert!(!result.contains("font"), "should not contain 'font' tag text: {result}");
+        assert!(
+            !result.contains("font"),
+            "should not contain 'font' tag text: {result}"
+        );
         assert!(!result.contains('<'), "should not contain '<': {result}");
         assert!(result.contains("Headline"));
         assert!(result.contains("Reuters"));
@@ -394,11 +392,17 @@ mod tests {
         assert_eq!(items.len(), 1);
         let summary = items[0].summary.as_deref().expect("should have summary");
         eprintln!("DEBUG summary: {summary:?}");
-        assert!(!summary.contains('/'), "summary contains stray /: {summary}");
+        assert!(
+            !summary.contains('/'),
+            "summary contains stray /: {summary}"
+        );
         assert!(!summary.contains('<'), "summary contains <: {summary}");
         assert!(summary.contains("summary content"));
         // Title and publisher should NOT appear in summary.
-        assert!(!summary.starts_with("Headline"), "summary starts with headline: {summary}");
+        assert!(
+            !summary.starts_with("Headline"),
+            "summary starts with headline: {summary}"
+        );
     }
 
     #[test]
@@ -419,7 +423,10 @@ mod tests {
         // clean_html decodes then strips.
         let cleaned = clean_html(&descs[0]);
         eprintln!("DEBUG cleaned: {cleaned:?}");
-        assert!(!cleaned.contains("/font"), "cleaned contains /font: {cleaned}");
+        assert!(
+            !cleaned.contains("/font"),
+            "cleaned contains /font: {cleaned}"
+        );
         assert!(!cleaned.contains('<'), "cleaned contains <: {cleaned}");
         assert!(cleaned.contains("Reuters"));
         assert!(cleaned.contains("Real content"));
@@ -444,7 +451,10 @@ mod tests {
         // Description is just headline + publisher, no extra text.
         let raw = "&lt;a href=\"x\"&gt;Apple beats estimates&lt;/a&gt;&amp;nbsp;&lt;font&gt;Reuters&lt;/font&gt;";
         let result = clean_summary(raw, "Apple beats estimates", "Reuters");
-        assert!(result.is_empty(), "should be empty when no real summary: {result}");
+        assert!(
+            result.is_empty(),
+            "should be empty when no real summary: {result}"
+        );
     }
 
     #[test]

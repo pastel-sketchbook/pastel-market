@@ -498,7 +498,7 @@ pub struct Mover {
 }
 
 /// Top N gainers and top N losers from a set of quotes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TopMovers {
     pub gainers: Vec<Mover>,
     pub losers: Vec<Mover>,

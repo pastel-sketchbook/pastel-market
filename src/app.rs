@@ -320,7 +320,7 @@ impl App {
             tick: 0,
             ticks_since_refresh: 0,
             pending_g: false,
-            top_movers: TopMovers { gainers: Vec::new(), losers: Vec::new() },
+            top_movers: TopMovers::default(),
             loading: false,
             alert_fired: false,
             skip_persist: false,
@@ -889,9 +889,8 @@ impl App {
                     {
                         // Compute split ratio from mouse column relative to terminal width.
                         let col = f64::from(mouse.column);
-                        let width = f64::from(
-                            crossterm::terminal::size().map_or(80, |(w, _)| w).max(1),
-                        );
+                        let width =
+                            f64::from(crossterm::terminal::size().map_or(80, |(w, _)| w).max(1));
                         let ratio = (col / width).clamp(0.2, 0.8);
                         self.chart_detail_split = ratio;
                     }
@@ -1266,8 +1265,7 @@ impl App {
             KeyCode::Down | KeyCode::Char('j')
                 if self.chart_tab == ChartTab::News && !self.chart_news.is_empty() =>
             {
-                self.chart_news_selected =
-                    (self.chart_news_selected + 1) % self.chart_news.len();
+                self.chart_news_selected = (self.chart_news_selected + 1) % self.chart_news.len();
                 self.chart_news_summary_open = false;
             }
             KeyCode::Up | KeyCode::Char('k')

@@ -105,10 +105,12 @@ fn is_us_dst(date: NaiveDate) -> bool {
 
 /// Return the nth Sunday in the given month/year.
 fn nth_sunday(year: i32, month: u32, nth: u32) -> NaiveDate {
+    // Invariant: month is always 3 or 11, day 1 is always valid.
     let first = NaiveDate::from_ymd_opt(year, month, 1).expect("valid date");
     // weekday: Mon=0 .. Sun=6
     let days_to_sun = (6 - first.weekday().num_days_from_monday()) % 7;
-    let day = 1 + days_to_sun + 7 * (nth - 1);
+    // Invariant: nth is 1 or 2, so day ≤ 15 — always valid for March/November.
+    let day = 1 + days_to_sun + 7 * (nth.saturating_sub(1));
     NaiveDate::from_ymd_opt(year, month, day).expect("valid nth Sunday")
 }
 

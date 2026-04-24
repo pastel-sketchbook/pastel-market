@@ -53,10 +53,7 @@ pub enum FetchResult {
         filings: Vec<SecFiling>,
     },
     /// Fetched text content of a single SEC filing document.
-    FilingContent {
-        url: String,
-        content: String,
-    },
+    FilingContent { url: String, content: String },
     /// Scanner quotes (Yahoo screener or trending).
     Scanner {
         quotes: Vec<Quote>,
@@ -294,10 +291,7 @@ impl Worker {
         let tx = self.tx.clone();
         thread::spawn(move || {
             let result = match market_core::sec::fetch_sec_filings(&ticker) {
-                Ok(filings) => FetchResult::SecFilings {
-                    ticker,
-                    filings,
-                },
+                Ok(filings) => FetchResult::SecFilings { ticker, filings },
                 Err(e) => {
                     tracing::warn!(error = %e, "SEC filing fetch failed");
                     FetchResult::SecFilings {
@@ -315,10 +309,7 @@ impl Worker {
         let tx = self.tx.clone();
         thread::spawn(move || {
             let result = match market_core::sec::fetch_filing_content(&url) {
-                Ok(content) => FetchResult::FilingContent {
-                    url,
-                    content,
-                },
+                Ok(content) => FetchResult::FilingContent { url, content },
                 Err(e) => {
                     tracing::warn!(error = %e, "filing content fetch failed");
                     FetchResult::FilingContent {
@@ -467,9 +458,7 @@ fn merge_news(
     let google_titles: Vec<String> = merged.iter().map(|n| normalize_title(&n.title)).collect();
     for item in yahoo {
         let norm = normalize_title(&item.title);
-        let is_dup = google_titles
-            .iter()
-            .any(|gt| titles_similar(gt, &norm));
+        let is_dup = google_titles.iter().any(|gt| titles_similar(gt, &norm));
         if !is_dup {
             merged.push(item);
         }
@@ -520,10 +509,7 @@ fn titles_similar(a: &str, b: &str) -> bool {
     if shorter.len() < 3 {
         return false;
     }
-    let overlap = shorter
-        .iter()
-        .filter(|w| longer.contains(w))
-        .count();
+    let overlap = shorter.iter().filter(|w| longer.contains(w)).count();
     #[allow(clippy::cast_precision_loss)]
     let ratio = overlap as f64 / shorter.len() as f64;
     ratio > 0.6
@@ -546,12 +532,18 @@ mod merge_tests {
 
     #[test]
     fn merge_deduplicates_by_title() {
-        let yahoo = vec![
-            item("Apple reports record earnings", "Yahoo Finance", None, Some(100)),
-        ];
-        let google = vec![
-            item("Apple reports record earnings", "Reuters", Some("Summary here"), Some(100)),
-        ];
+        let yahoo = vec![item(
+            "Apple reports record earnings",
+            "Yahoo Finance",
+            None,
+            Some(100),
+        )];
+        let google = vec![item(
+            "Apple reports record earnings",
+            "Reuters",
+            Some("Summary here"),
+            Some(100),
+        )];
         let merged = merge_news(yahoo, google);
         assert_eq!(merged.len(), 1);
         // Google version preferred (has summary).
@@ -561,8 +553,18 @@ mod merge_tests {
 
     #[test]
     fn merge_keeps_unique_items() {
-        let yahoo = vec![item("Tesla deliveries beat expectations", "Yahoo", None, Some(200))];
-        let google = vec![item("Apple launches new MacBook Pro", "Reuters", Some("Snippet"), Some(100))];
+        let yahoo = vec![item(
+            "Tesla deliveries beat expectations",
+            "Yahoo",
+            None,
+            Some(200),
+        )];
+        let google = vec![item(
+            "Apple launches new MacBook Pro",
+            "Reuters",
+            Some("Snippet"),
+            Some(100),
+        )];
         let merged = merge_news(yahoo, google);
         assert_eq!(merged.len(), 2);
     }
@@ -590,12 +592,18 @@ mod merge_tests {
 
     #[test]
     fn fuzzy_dedup_catches_similar_titles() {
-        let yahoo = vec![
-            item("Apple reports record Q4 earnings, stock surges", "Yahoo", None, Some(100)),
-        ];
-        let google = vec![
-            item("Apple reports record Q4 earnings", "Reuters", Some("Summary"), Some(100)),
-        ];
+        let yahoo = vec![item(
+            "Apple reports record Q4 earnings, stock surges",
+            "Yahoo",
+            None,
+            Some(100),
+        )];
+        let google = vec![item(
+            "Apple reports record Q4 earnings",
+            "Reuters",
+            Some("Summary"),
+            Some(100),
+        )];
         let merged = merge_news(yahoo, google);
         assert_eq!(merged.len(), 1);
     }

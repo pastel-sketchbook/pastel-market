@@ -169,7 +169,7 @@ pub fn mini_sparkline(points: &[market_core::domain::PricePoint], width: usize) 
     let step = points.len() as f64 / width as f64;
     let sampled: Vec<f64> = (0..width)
         .map(|i| {
-            let idx = ((i as f64) * step).min((points.len() - 1) as f64) as usize;
+            let idx = ((i as f64) * step).min(points.len().saturating_sub(1) as f64) as usize;
             points[idx].close
         })
         .collect();

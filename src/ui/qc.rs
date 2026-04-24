@@ -73,17 +73,32 @@ fn draw_whisper_panel(frame: &mut Frame, app: &App, theme: &Theme, title_style: 
             if let Some(date) = &whisper.earnings_date {
                 lines.push(format!("Date: {date}"));
             }
+            if let Some(w) = &whisper.whisper {
+                lines.push(format!("Whisper: ${w}"));
+            }
             if let Some(consensus) = &whisper.consensus {
                 lines.push(format!("Consensus: ${consensus}"));
             }
             if let Some(vol) = &whisper.volatility {
                 lines.push(format!("Volatility: {vol}"));
             }
-            if whisper.whisper.is_none() {
-                lines.push("Whisper: N/A".to_string());
+            if let Some(grade) = &whisper.grade {
+                lines.push(format!("Grade: {grade}"));
             }
-            if whisper.grade.is_none() {
-                lines.push("Grade: N/A".to_string());
+            if let Some(score) = &whisper.score {
+                lines.push(format!("Score: {score}"));
+            }
+            if let Some(sentiment) = &whisper.sentiment {
+                lines.push(format!("Sentiment: {sentiment}"));
+            }
+            if let Some(lifecycle) = &whisper.lifecycle {
+                lines.push(format!("Life Cycle: {lifecycle}"));
+            }
+            if let Some(beats) = whisper.past_beats {
+                lines.push(format!(
+                    "History: {}",
+                    if beats { "Beats" } else { "Misses" }
+                ));
             }
             if lines.is_empty() {
                 vec![ListItem::new(" No earnings data ").style(Style::default().fg(theme.muted))]

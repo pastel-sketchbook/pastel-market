@@ -28,6 +28,10 @@ pub enum FetchResult {
     SectorQuotes { quotes: Vec<Option<Quote>> },
     /// Sparkline data for the selected symbol.
     Sparkline { points: Vec<PricePoint> },
+    /// Per-symbol sparkline data for inline watchlist display.
+    SparklineAll {
+        sparklines: std::collections::HashMap<String, Vec<PricePoint>>,
+    },
     /// Chart data for the performance chart overlay.
     Chart {
         symbol: String,
@@ -165,6 +169,50 @@ impl Worker {
                 Err(_) => FetchResult::Sparkline { points: Vec::new() },
             };
             let _ = tx.send(result);
+        });
+    }
+
+    /// Fetch sparklines for all symbols in the background (for inline display).
+    ///
+    /// Uses `thread::scope` to fetch multiple symbols in parallel, bounded
+    /// to avoid spawning too many threads at once.
+    pub fn submit_sparklines_all(&self, symbols: Vec<String>) {
+        if symbols.is_empty() {
+            return;
+        }
+        let tx = self.tx.clone();
+        let client = Arc::clone(&self.client);
+        thread::spawn(move || {
+            // Fetch in parallel using scoped threads (max 8 concurrent).
+            const MAX_CONCURRENT: usize = 8;
+            let mut sparklines = std::collections::HashMap::new();
+            for chunk in symbols.chunks(MAX_CONCURRENT) {
+                let results: Vec<(String, Vec<PricePoint>)> = thread::scope(|s| {
+                    let handles: Vec<_> = chunk
+                        .iter()
+                        .map(|sym| {
+                            let client = &client;
+                            let sym = sym.clone();
+                            s.spawn(move || {
+                                let points = client
+                                    .fetch_sparkline(&sym, ChartRange::Day1)
+                                    .unwrap_or_default();
+                                (sym, points)
+                            })
+                        })
+                        .collect();
+                    handles
+                        .into_iter()
+                        .filter_map(|h| h.join().ok())
+                        .collect()
+                });
+                for (sym, pts) in results {
+                    if !pts.is_empty() {
+                        sparklines.insert(sym, pts);
+                    }
+                }
+            }
+            let _ = tx.send(FetchResult::SparklineAll { sparklines });
         });
     }
 

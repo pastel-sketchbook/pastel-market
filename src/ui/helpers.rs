@@ -134,6 +134,49 @@ pub fn refresh_indicator<'a>(is_active: bool, theme: &Theme) -> Span<'a> {
     }
 }
 
+/// Render a mini sparkline string from price points using Braille-like block chars.
+///
+/// Returns a fixed-width string (up to `width` characters) using Unicode
+/// block characters to represent the price trend.
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+pub fn mini_sparkline(points: &[market_core::domain::PricePoint], width: usize) -> String {
+    if points.is_empty() || width == 0 {
+        return " ".repeat(width);
+    }
+
+    let bars = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+    // Downsample to `width` points.
+    let step = points.len() as f64 / width as f64;
+    let sampled: Vec<f64> = (0..width)
+        .map(|i| {
+            let idx = ((i as f64) * step).min((points.len() - 1) as f64) as usize;
+            points[idx].close
+        })
+        .collect();
+
+    let min = sampled.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = sampled.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let range = max - min;
+
+    sampled
+        .iter()
+        .map(|&v| {
+            if range < f64::EPSILON {
+                bars[4]
+            } else {
+                let norm = ((v - min) / range * 8.0).round().min(8.0) as usize;
+                bars[norm]
+            }
+        })
+        .collect()
+}
+
 /// Tick-based spinner frame (Braille dots cycling at ~4 fps with 250ms ticks).
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]

@@ -86,6 +86,7 @@ pub struct App {
     pub input_mode: InputMode,
     pub input_buffer: String,
     pub sparkline_data: Vec<PricePoint>,
+    pub sparkline_cache: HashMap<String, Vec<PricePoint>>,
     pub status_message: String,
     pub should_quit: bool,
 
@@ -100,6 +101,8 @@ pub struct App {
     // -- Scanner (from Reins Market) --
     pub scanner_list: ScannerList,
     pub scanner_quotes: Vec<Quote>,
+    pub scanner_selected: usize,
+    pub scanner_table_state: ratatui::widgets::TableState,
 
     // -- News (from Reins Market) --
     pub news_headlines: Vec<NewsItem>,
@@ -189,6 +192,7 @@ impl App {
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             sparkline_data: Vec::new(),
+            sparkline_cache: HashMap::new(),
             status_message: String::new(),
             should_quit: false,
             index_quotes: Vec::new(),
@@ -199,6 +203,8 @@ impl App {
             view_mode,
             scanner_list: ScannerList::default(),
             scanner_quotes: Vec::new(),
+            scanner_selected: 0,
+            scanner_table_state: ratatui::widgets::TableState::default(),
             news_headlines: Vec::new(),
             show_news: false,
             focus: Focus::default(),
@@ -241,6 +247,7 @@ impl App {
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             sparkline_data: Vec::new(),
+            sparkline_cache: HashMap::new(),
             status_message: String::new(),
             should_quit: false,
             index_quotes: Vec::new(),
@@ -251,6 +258,8 @@ impl App {
             view_mode: ViewMode::default(),
             scanner_list: ScannerList::default(),
             scanner_quotes: Vec::new(),
+            scanner_selected: 0,
+            scanner_table_state: ratatui::widgets::TableState::default(),
             news_headlines: Vec::new(),
             show_news: false,
             focus: Focus::default(),
@@ -463,7 +472,7 @@ impl App {
 
         // Watchlist quotes
         let symbols: Vec<String> = self.watchlist.symbols().to_vec();
-        worker.submit_quotes(symbols);
+        worker.submit_quotes(symbols.clone());
 
         // Index quotes
         let idx_syms: Vec<String> = INDEX_SYMBOLS.iter().map(|s| (*s).to_string()).collect();
@@ -472,6 +481,9 @@ impl App {
         // Sector quotes
         let sec_syms: Vec<String> = SECTOR_SYMBOLS.iter().map(|s| (*s).to_string()).collect();
         worker.submit_sector_quotes(sec_syms);
+
+        // Per-symbol sparklines for inline watchlist display
+        worker.submit_sparklines_all(symbols);
 
         // Sparkline for selected symbol
         self.refresh_sparkline();
@@ -506,6 +518,23 @@ impl App {
                 self.scanner_quotes.iter().cloned().map(Some).collect();
             self.top_movers = TopMovers::from_quotes(&as_options, 3);
         }
+    }
+
+    /// Submit QC-specific fetches for the selected screener stock.
+    ///
+    /// Only fetches if the selected ticker has changed or data is missing.
+    fn refresh_qc_data_if_stale(&mut self) {
+        let Some(ticker) = self.selected_screener_ticker() else {
+            return;
+        };
+        // Skip if we already have whisper + insider data for this ticker.
+        if self.whisper_cache.contains_key(&ticker)
+            && self.insider_ownership.contains_key(&ticker)
+            && !self.sector_heat.is_empty()
+        {
+            return;
+        }
+        self.refresh_qc_data();
     }
 
     /// Submit QC-specific fetches for the selected screener stock.
@@ -621,6 +650,9 @@ impl App {
                 FetchResult::Sparkline { points } => {
                     self.sparkline_data = points;
                 }
+                FetchResult::SparklineAll { sparklines } => {
+                    self.sparkline_cache.extend(sparklines);
+                }
                 FetchResult::Chart {
                     symbol,
                     range,
@@ -727,7 +759,7 @@ impl App {
             self.pending_g = false;
             if key.code == KeyCode::Char('g') {
                 match self.focus {
-                    Focus::Table => self.watchlist.select_first(),
+                    Focus::Table => self.navigate_table_first(),
                     Focus::QcChecklist => self.selected_qc = 0,
                 }
                 return;
@@ -740,7 +772,7 @@ impl App {
 
             // Navigation
             KeyCode::Char('j') | KeyCode::Down => match self.focus {
-                Focus::Table => self.watchlist.select_next(),
+                Focus::Table => self.navigate_table_down(),
                 Focus::QcChecklist => {
                     if !self.qc_labels.is_empty() {
                         self.selected_qc = (self.selected_qc + 1) % self.qc_labels.len();
@@ -748,7 +780,7 @@ impl App {
                 }
             },
             KeyCode::Char('k') | KeyCode::Up => match self.focus {
-                Focus::Table => self.watchlist.select_previous(),
+                Focus::Table => self.navigate_table_up(),
                 Focus::QcChecklist => {
                     if !self.qc_labels.is_empty() {
                         self.selected_qc = self
@@ -760,7 +792,7 @@ impl App {
             },
             KeyCode::Char('g') => self.pending_g = true,
             KeyCode::Char('G') => match self.focus {
-                Focus::Table => self.watchlist.select_last(),
+                Focus::Table => self.navigate_table_last(),
                 Focus::QcChecklist => {
                     if !self.qc_labels.is_empty() {
                         self.selected_qc = self.qc_labels.len().saturating_sub(1);
@@ -828,6 +860,10 @@ impl App {
 
             // Delete symbol
             KeyCode::Char('d') if self.view_mode == ViewMode::Watchlist => {
+                // Evict sparkline cache entry before removing the symbol.
+                if let Some(sym) = self.watchlist.symbols().get(self.watchlist.selected()) {
+                    self.sparkline_cache.remove(sym);
+                }
                 self.watchlist.remove_selected();
                 self.persist_session();
             }
@@ -982,6 +1018,59 @@ impl App {
         // If switching to Scanner and no data yet, trigger a fetch.
         if self.view_mode == ViewMode::Scanner && self.scanner_quotes.is_empty() {
             self.refresh_scanner();
+        }
+        // If switching to QC view, auto-fetch screener + QC data.
+        if self.view_mode == ViewMode::QualityControl {
+            if self.screener_results.is_empty() {
+                self.refresh_scanner();
+            }
+            self.refresh_qc_data_if_stale();
+        }
+    }
+
+    // -- View-mode-aware table navigation ------------------------------------
+
+    fn navigate_table_down(&mut self) {
+        match self.view_mode {
+            ViewMode::Scanner => {
+                if !self.scanner_quotes.is_empty() {
+                    self.scanner_selected =
+                        (self.scanner_selected + 1) % self.scanner_quotes.len();
+                }
+            }
+            _ => self.watchlist.select_next(),
+        }
+    }
+
+    fn navigate_table_up(&mut self) {
+        match self.view_mode {
+            ViewMode::Scanner => {
+                if !self.scanner_quotes.is_empty() {
+                    self.scanner_selected = self
+                        .scanner_selected
+                        .checked_sub(1)
+                        .unwrap_or(self.scanner_quotes.len().saturating_sub(1));
+                }
+            }
+            _ => self.watchlist.select_previous(),
+        }
+    }
+
+    fn navigate_table_first(&mut self) {
+        match self.view_mode {
+            ViewMode::Scanner => self.scanner_selected = 0,
+            _ => self.watchlist.select_first(),
+        }
+    }
+
+    fn navigate_table_last(&mut self) {
+        match self.view_mode {
+            ViewMode::Scanner => {
+                if !self.scanner_quotes.is_empty() {
+                    self.scanner_selected = self.scanner_quotes.len().saturating_sub(1);
+                }
+            }
+            _ => self.watchlist.select_last(),
         }
     }
 

@@ -14,6 +14,9 @@ use crossterm::event::{self, Event as CrosstermEvent, KeyEvent};
 pub enum Event {
     /// A key was pressed.
     Key(KeyEvent),
+    /// The terminal was resized to (columns, rows).
+    #[allow(dead_code)]
+    Resize(u16, u16),
     /// The refresh timer fired — time to re-fetch quotes.
     Tick,
 }
@@ -75,11 +78,20 @@ impl EventHandler {
             loop {
                 let timeout = tick_rate.saturating_sub(last_tick.elapsed());
 
-                if source.poll(timeout)
-                    && let Some(CrosstermEvent::Key(key)) = source.read()
-                    && tx.send(Event::Key(key)).is_err()
-                {
-                    return;
+                if source.poll(timeout) {
+                    match source.read() {
+                        Some(CrosstermEvent::Key(key))
+                            if tx.send(Event::Key(key)).is_err() =>
+                        {
+                            return;
+                        }
+                        Some(CrosstermEvent::Resize(w, h))
+                            if tx.send(Event::Resize(w, h)).is_err() =>
+                        {
+                            return;
+                        }
+                        _ => {}
+                    }
                 }
 
                 if last_tick.elapsed() >= tick_rate {
@@ -173,7 +185,7 @@ mod tests {
         let event = handler.next().expect("should receive event");
         match event {
             Event::Key(key) => assert_eq!(key.code, KeyCode::Char('q')),
-            Event::Tick => panic!("expected Key event, got Tick"),
+            other => panic!("expected Key event, got: {other:?}"),
         }
     }
 
@@ -212,6 +224,18 @@ mod tests {
         assert!(
             matches!(event, Event::Tick),
             "expected Tick (non-key events filtered), got: {event:?}"
+        );
+    }
+
+    #[test]
+    fn handler_forwards_resize_event() {
+        let source = FakeSource::new(vec![CrosstermEvent::Resize(120, 40)]);
+        let handler = EventHandler::with_source(Duration::from_secs(10), source);
+
+        let event = handler.next().expect("should receive event");
+        assert!(
+            matches!(event, Event::Resize(120, 40)),
+            "expected Resize(120, 40), got: {event:?}"
         );
     }
 }

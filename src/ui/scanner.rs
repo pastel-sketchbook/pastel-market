@@ -9,11 +9,11 @@ use crate::app::App;
 use market_core::domain::{Quote, rank_by_change};
 use market_core::theme::Theme;
 
-use super::helpers::stripe_style;
+use super::helpers::{highlight_style, stripe_style};
 use super::watchlist::{TABLE_WIDTHS, build_quote_row, empty_state_row, table_header};
 
 /// Render the scanner results table.
-pub fn draw_scanner_table(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
+pub fn draw_scanner_table(frame: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
     let header = table_header(theme);
 
     let as_options: Vec<Option<Quote>> = app.scanner_quotes.iter().cloned().map(Some).collect();
@@ -31,6 +31,7 @@ pub fn draw_scanner_table(frame: &mut Frame, app: &App, theme: &Theme, area: Rec
                     Some(q.symbol.as_str()),
                     ranks.get(row_idx).and_then(Option::as_ref),
                     theme,
+                    None,
                 );
                 row.style(stripe_style(row_idx, theme))
             })
@@ -42,13 +43,21 @@ pub fn draw_scanner_table(frame: &mut Frame, app: &App, theme: &Theme, area: Rec
         .fg(theme.accent)
         .add_modifier(Modifier::BOLD);
 
-    let table = Table::new(rows, TABLE_WIDTHS).header(header).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.border))
-            .title(title)
-            .title_style(title_style),
-    );
+    let selected = app
+        .scanner_selected
+        .min(app.scanner_quotes.len().saturating_sub(1));
 
-    frame.render_widget(table, area);
+    let table = Table::new(rows, TABLE_WIDTHS)
+        .header(header)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border))
+                .title(title)
+                .title_style(title_style),
+        )
+        .row_highlight_style(highlight_style(theme));
+
+    app.scanner_table_state.select(Some(selected));
+    frame.render_stateful_widget(table, area, &mut app.scanner_table_state);
 }

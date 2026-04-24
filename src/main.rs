@@ -72,7 +72,7 @@ fn run_loop(
             Event::Tick => {
                 app.on_tick();
             }
-            Event::Key(_) => {}
+            Event::Resize(_, _) | Event::Key(_) => {}
         }
 
         if app.should_quit {

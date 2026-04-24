@@ -10,14 +10,15 @@ use market_core::domain::{FilterMode, Quote, QuoteRank, SortMode, rank_by_change
 use market_core::theme::Theme;
 
 use super::helpers::{
-    format_change_cell, format_volume, heatmap_color, highlight_style, stripe_style,
+    format_change_cell, format_volume, heatmap_color, highlight_style, mini_sparkline, stripe_style,
 };
 
 /// Column widths shared between watchlist and scanner tables.
-pub const TABLE_WIDTHS: [Constraint; 7] = [
+pub const TABLE_WIDTHS: [Constraint; 8] = [
     Constraint::Length(8),
     Constraint::Min(14),
     Constraint::Length(14),
+    Constraint::Length(10),
     Constraint::Length(10),
     Constraint::Length(10),
     Constraint::Length(10),
@@ -34,6 +35,7 @@ pub fn table_header(theme: &Theme) -> Row<'static> {
         Cell::from("Change"),
         Cell::from("Change%"),
         Cell::from("Volume"),
+        Cell::from("Spark"),
     ])
     .style(
         Style::default()
@@ -48,6 +50,7 @@ pub fn build_quote_row<'a>(
     symbol: Option<&str>,
     rank: Option<&QuoteRank>,
     theme: &Theme,
+    sparkline_points: Option<&[market_core::domain::PricePoint]>,
 ) -> Row<'a> {
     if let Some(q) = quote {
         let change_style = rank.map_or_else(
@@ -63,6 +66,12 @@ pub fn build_quote_row<'a>(
             },
         );
 
+        let spark_str = sparkline_points.map_or_else(
+            || " ".repeat(8),
+            |pts| mini_sparkline(pts, 8),
+        );
+        let spark_color = if q.is_gain() { theme.gain } else { theme.loss };
+
         Row::new(vec![
             Cell::from(q.symbol.clone()),
             Cell::from(q.display_name().to_string()),
@@ -72,6 +81,7 @@ pub fn build_quote_row<'a>(
             Cell::from(format_change_cell(q.regular_market_change_percent, rank))
                 .style(change_style),
             Cell::from(format_volume(q.regular_market_volume)),
+            Cell::from(spark_str).style(Style::default().fg(spark_color)),
         ])
     } else {
         Row::new(vec![
@@ -82,6 +92,7 @@ pub fn build_quote_row<'a>(
             Cell::from("--"),
             Cell::from("--"),
             Cell::from("--"),
+            Cell::from(""),
         ])
     }
 }
@@ -90,6 +101,7 @@ pub fn build_quote_row<'a>(
 pub fn empty_state_row(message: &str, theme: &Theme) -> Row<'static> {
     Row::new(vec![
         Cell::from(message.to_string()).style(Style::default().fg(theme.muted)),
+        Cell::from(""),
         Cell::from(""),
         Cell::from(""),
         Cell::from(""),
@@ -126,11 +138,14 @@ pub fn draw_watchlist_table(frame: &mut Frame, app: &App, theme: &Theme, area: R
             .iter()
             .enumerate()
             .map(|(row_idx, &i)| {
+                let sym = app.watchlist.symbols().get(i).map(String::as_str);
+                let spark = sym.and_then(|s| app.sparkline_cache.get(s).map(Vec::as_slice));
                 let row = build_quote_row(
                     app.watchlist.quotes().get(i).and_then(Option::as_ref),
-                    app.watchlist.symbols().get(i).map(String::as_str),
+                    sym,
                     ranks.get(i).and_then(Option::as_ref),
                     theme,
+                    spark,
                 );
                 row.style(stripe_style(row_idx, theme))
             })

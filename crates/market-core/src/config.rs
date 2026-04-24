@@ -41,6 +41,20 @@ pub struct Session {
     pub filter_mode: String,
     /// Current view mode name.
     pub view_mode: String,
+    /// Named watchlist tabs: vec of (name, symbols).
+    /// Empty means legacy single-list mode.
+    #[serde(default)]
+    pub watchlist_tabs: Vec<WatchlistTab>,
+    /// Index of the active watchlist tab.
+    #[serde(default)]
+    pub active_tab: usize,
+}
+
+/// A named watchlist tab.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WatchlistTab {
+    pub name: String,
+    pub symbols: Vec<String>,
 }
 
 impl Default for Session {
@@ -50,6 +64,8 @@ impl Default for Session {
             sort_mode: String::from("Default"),
             filter_mode: String::from("All"),
             view_mode: String::from("Watchlist"),
+            watchlist_tabs: Vec::new(),
+            active_tab: 0,
         }
     }
 }

@@ -26,6 +26,7 @@ const BINDINGS: &[(&str, &str)] = &[
     ("n", "Toggle news panel"),
     ("a", "Add symbol (Watchlist)"),
     ("d", "Delete symbol (Watchlist)"),
+    ("[ / ]", "Prev / next watchlist tab"),
     ("1-5", "Select scanner list (Scanner)"),
     ("Ctrl+C", "Force quit"),
 ];

@@ -113,6 +113,9 @@ fn build_normal_footer<'a>(app: &App, theme: &'a Theme, sep: &Span<'a>) -> Vec<S
             s.push(sep.clone());
             s.push(key_badge("d", theme));
             s.push(muted_span(" Del ", theme));
+            s.push(sep.clone());
+            s.push(key_badge("[/]", theme));
+            s.push(muted_span(" Tab ", theme));
         }
     }
 

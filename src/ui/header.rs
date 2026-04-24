@@ -1,5 +1,6 @@
-//! Header bar: title, market status, index quotes, sector performance.
+//! Header bar: title, market status, index quotes, sector performance, market clock.
 
+use chrono::{Datelike, FixedOffset, NaiveDate, Utc};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -82,6 +83,66 @@ fn header_border_color(status: MarketStatus, any_passed: bool, theme: &Theme) ->
     }
 }
 
+/// US Eastern Time offset, accounting for DST (second Sunday in March to
+/// first Sunday in November).
+fn eastern_offset() -> FixedOffset {
+    let now = Utc::now().naive_utc().date();
+    if is_us_dst(now) {
+        // Safety: -4 * 3600 is within i32 range.
+        FixedOffset::west_opt(4 * 3600).expect("valid offset: EDT")
+    } else {
+        FixedOffset::west_opt(5 * 3600).expect("valid offset: EST")
+    }
+}
+
+/// Approximate US DST: second Sunday of March through first Sunday of November.
+fn is_us_dst(date: NaiveDate) -> bool {
+    let year = date.year();
+    let march_start = nth_sunday(year, 3, 2);
+    let nov_end = nth_sunday(year, 11, 1);
+    date >= march_start && date < nov_end
+}
+
+/// Return the nth Sunday in the given month/year.
+fn nth_sunday(year: i32, month: u32, nth: u32) -> NaiveDate {
+    let first = NaiveDate::from_ymd_opt(year, month, 1).expect("valid date");
+    // weekday: Mon=0 .. Sun=6
+    let days_to_sun = (6 - first.weekday().num_days_from_monday()) % 7;
+    let day = 1 + days_to_sun + 7 * (nth - 1);
+    NaiveDate::from_ymd_opt(year, month, day).expect("valid nth Sunday")
+}
+
+/// Market clock spans: "ET HH:MM" and optionally time-to-close.
+fn market_clock_spans(status: MarketStatus, theme: &Theme) -> Vec<Span<'static>> {
+    let et = Utc::now().with_timezone(&eastern_offset());
+    let hm = et.format("%H:%M").to_string();
+
+    let mut spans = vec![Span::styled(
+        format!("ET {hm}"),
+        Style::default()
+            .fg(theme.fg)
+            .add_modifier(Modifier::DIM),
+    )];
+
+    // Show time-to-close only when market is open (closes at 16:00 ET).
+    if status == MarketStatus::Open {
+        let now_secs = i64::from(et.format("%H").to_string().parse::<i32>().unwrap_or(0)) * 3600
+            + i64::from(et.format("%M").to_string().parse::<i32>().unwrap_or(0)) * 60;
+        let close_secs: i64 = 16 * 3600;
+        let remaining = close_secs - now_secs;
+        if remaining > 0 {
+            let h = remaining / 3600;
+            let m = (remaining % 3600) / 60;
+            spans.push(Span::styled(
+                format!(" ({h}h{m:02}m)"),
+                Style::default().fg(theme.accent),
+            ));
+        }
+    }
+
+    spans
+}
+
 /// Render the header bar.
 pub fn draw_header(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let any_passed = app.any_fully_passed();
@@ -113,11 +174,13 @@ pub fn draw_header(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     ));
     frame.render_widget(Paragraph::new(Line::from(left_spans)), cols[0]);
 
-    // Right: market status + index summary.
+    // Right: market status + clock + index summary.
     let mut right_spans: Vec<Span> = vec![
         market_status_badge(app.market_status, theme),
-        Span::raw("  "),
+        Span::raw(" "),
     ];
+    right_spans.extend(market_clock_spans(app.market_status, theme));
+    right_spans.push(Span::raw("  "));
     for (i, sym) in INDEX_SYMBOLS.iter().enumerate() {
         let quote = app.index_quotes.get(i).and_then(Option::as_ref);
         right_spans.extend(format_index_spans(sym, quote, theme));

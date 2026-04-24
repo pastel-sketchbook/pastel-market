@@ -16,15 +16,23 @@ Monitor markets. Screen stocks. Gauge earnings. Inspect quality. Signal convicti
 
 - **Watchlist** — live quotes from Yahoo Finance with sparklines, 52-week
   ranges, sector tags, and heatmap-ranked price changes
+- **Multiple watchlist tabs** — named tabs (`[`/`]` to switch) persisted across
+  sessions for sector-based organizing
 - **Scanners** — day gainers, day losers, most active, trending tickers, and
-  Finviz fundamental screener
+  Finviz fundamental screener with sort/filter support
 - **Quality Control** — per-stock 5-point inspection checklist with 3 items
   auto-populated from live data (insider ownership, sector heat, historical
   earnings beats)
 - **Conviction signaling** — any stock achieving 5/5 QC score triggers
-  `HIGH CONVICTION - READY` in the header
+  `HIGH CONVICTION - READY` in the header with a terminal bell alert
 - **Earnings intelligence** — whisper numbers, implied volatility, grades, and
   report timing via Earnings Whispers (feature-gated)
+- **Market clock** — Eastern Time display with time-to-close countdown during
+  market hours
+- **Pre/after-hours prices** — extended-hours price data shown in the detail pane
+- **Clipboard export** — `y` copies selected symbol data to system clipboard
+- **Mouse support** — scroll wheel navigation in watchlist and scanner tables
+- **Help overlay** — `?` shows all keybindings in a popup
 - **16 themes** — 8 dark + 8 light, cycled with `t`, persisted across sessions
 - **Non-blocking UI** — all HTTP fetches run on background threads; the event
   loop never stalls
@@ -52,17 +60,20 @@ task run
 | Key | Action |
 |---|---|
 | `q` / `Esc` | Quit |
+| `?` | Toggle help overlay |
 | `Tab` / `BackTab` | Cycle view: Watchlist → Scanner → QC |
 | `j` / `k` | Navigate down / up |
 | `gg` / `G` | Jump to first / last row |
 | `h` / `l` | Switch focus (QC view: table ↔ checklist) |
-| `Space` / `Enter` | Toggle QC item (QC view) |
+| `Space` / `Enter` | Toggle QC item (QC view) / Open chart (Watchlist) |
 | `r` | Refresh data |
 | `s` | Cycle sort mode |
 | `f` | Cycle filter mode |
 | `t` | Cycle theme |
 | `a` | Add symbol (Watchlist view) |
 | `d` | Delete symbol (Watchlist view) |
+| `y` | Copy selected symbol to clipboard |
+| `[` / `]` | Previous / next watchlist tab |
 | `n` | Toggle news panel |
 | `1`–`5` | Select scanner (Scanner view) |
 
@@ -81,6 +92,9 @@ pastel-market/
 │   ├── event.rs           EventHandler background thread
 │   ├── worker.rs          Background HTTP fetch worker
 │   └── ui/                Rendering modules
+├── tests/
+│   ├── fixture_parsing.rs Integration tests for HTML parsers
+│   └── fixtures/          Captured HTML pages for deterministic testing
 └── docs/rationale/        Design decision records
 ```
 

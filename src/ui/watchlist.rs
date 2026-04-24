@@ -180,7 +180,12 @@ pub fn draw_watchlist_table(frame: &mut Frame, app: &App, theme: &Theme, area: R
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme.border))
-                .title(format!(" Watchlist{sort_label}{filter_label} "))
+                .title(format!(
+                    " Watchlist: {} [{}/{}]{sort_label}{filter_label} ",
+                    app.watchlist_tabs.get(app.active_tab).map_or("Main", |(n, _)| n),
+                    app.active_tab + 1,
+                    app.watchlist_tabs.len(),
+                ))
                 .title_style(title_style),
         )
         .row_highlight_style(highlight_style(theme));

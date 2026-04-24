@@ -83,6 +83,8 @@ impl Focus {
 pub struct App {
     // -- Watchlist (from Reins Market) --
     pub watchlist: Watchlist,
+    pub watchlist_tabs: Vec<(String, Vec<String>)>,
+    pub active_tab: usize,
     pub input_mode: InputMode,
     pub input_buffer: String,
     pub sparkline_data: Vec<PricePoint>,
@@ -144,6 +146,9 @@ pub struct App {
     pub top_movers: TopMovers,
     pub loading: bool,
 
+    // -- Alert state --
+    pub alert_fired: bool,
+
     // -- Private --
     skip_persist: bool,
     worker: Option<Worker>,
@@ -188,10 +193,30 @@ impl App {
             session.symbols.clone()
         };
 
-        info!(count = symbols.len(), "initial watchlist symbols");
+        // Reconstruct tabs: use persisted tabs or create a default "Main" tab.
+        let (watchlist_tabs, active_tab) = if session.watchlist_tabs.is_empty() {
+            (vec![("Main".to_string(), symbols.clone())], 0)
+        } else {
+            let tabs: Vec<(String, Vec<String>)> = session
+                .watchlist_tabs
+                .iter()
+                .map(|t| (t.name.clone(), t.symbols.clone()))
+                .collect();
+            let active = session.active_tab.min(tabs.len().saturating_sub(1));
+            (tabs, active)
+        };
+
+        // Active tab's symbols drive the watchlist.
+        let active_symbols = watchlist_tabs
+            .get(active_tab)
+            .map_or_else(|| symbols.clone(), |(_, s)| s.clone());
+
+        info!(count = active_symbols.len(), "initial watchlist symbols");
 
         Self {
-            watchlist: Watchlist::new(symbols),
+            watchlist: Watchlist::new(active_symbols),
+            watchlist_tabs,
+            active_tab,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             sparkline_data: Vec::new(),
@@ -235,6 +260,7 @@ impl App {
                 losers: Vec::new(),
             },
             loading: false,
+            alert_fired: false,
             skip_persist: false,
             worker,
         }
@@ -247,7 +273,9 @@ impl App {
         let data =
             market_core::domain::mock::load_mock_data().unwrap_or_else(|_| fallback_mock_data());
         Self {
-            watchlist: Watchlist::new(symbols),
+            watchlist: Watchlist::new(symbols.clone()),
+            watchlist_tabs: vec![("Main".to_string(), symbols)],
+            active_tab: 0,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             sparkline_data: Vec::new(),
@@ -291,6 +319,7 @@ impl App {
                 losers: Vec::new(),
             },
             loading: false,
+            alert_fired: false,
             skip_persist: true,
             worker: Some(Worker::new(provider)),
         }
@@ -714,9 +743,10 @@ impl App {
                 }
             }
         }
-    }
 
-    // -- Tick handler --------------------------------------------------------
+        // After processing results, check if conviction alert should fire.
+        self.check_conviction_alert();
+    }
 
     /// Called every UI tick (250ms).
     ///
@@ -898,6 +928,11 @@ impl App {
                 self.persist_session();
             }
 
+            // Copy selected symbol data to clipboard
+            KeyCode::Char('y') => {
+                self.copy_to_clipboard();
+            }
+
             // News toggle
             KeyCode::Char('n') => {
                 self.show_news = !self.show_news;
@@ -919,6 +954,19 @@ impl App {
                     self.scanner_list = list;
                     self.refresh_scanner();
                 }
+            }
+
+            // Watchlist tab switching (Watchlist view only)
+            KeyCode::Char(']') if self.view_mode == ViewMode::Watchlist => {
+                self.switch_watchlist_tab(
+                    (self.active_tab + 1) % self.watchlist_tabs.len().max(1),
+                );
+            }
+            KeyCode::Char('[') if self.view_mode == ViewMode::Watchlist => {
+                let len = self.watchlist_tabs.len().max(1);
+                self.switch_watchlist_tab(
+                    self.active_tab.checked_sub(1).unwrap_or(len - 1),
+                );
             }
 
             _ => {}
@@ -1104,6 +1152,102 @@ impl App {
         }
     }
 
+    // -- Watchlist tab management ----------------------------------------------
+
+    /// Save the current watchlist's symbols back into the active tab.
+    fn sync_tab_from_watchlist(&mut self) {
+        if let Some(tab) = self.watchlist_tabs.get_mut(self.active_tab) {
+            tab.1 = self.watchlist.symbols().to_vec();
+        }
+    }
+
+    /// Switch to a different watchlist tab, saving the current one first.
+    fn switch_watchlist_tab(&mut self, new_idx: usize) {
+        if new_idx == self.active_tab || new_idx >= self.watchlist_tabs.len() {
+            return;
+        }
+        // Save current symbols back.
+        self.sync_tab_from_watchlist();
+        self.active_tab = new_idx;
+        let symbols = self.watchlist_tabs[new_idx].1.clone();
+        self.watchlist = Watchlist::new(symbols);
+        self.sparkline_cache.clear();
+        self.persist_session();
+        self.refresh_quotes();
+    }
+
+    // -- Clipboard -----------------------------------------------------------
+
+    /// Copy the selected symbol's data to the system clipboard.
+    fn copy_to_clipboard(&mut self) {
+        let text = if let Some(q) = self.watchlist.selected_quote() {
+            format!(
+                "{}\t${:.2}\t{:+.2}\t{:+.2}%",
+                q.symbol,
+                q.regular_market_price,
+                q.regular_market_change,
+                q.regular_market_change_percent,
+            )
+        } else {
+            let syms = self.watchlist.symbols();
+            let idx = self.watchlist.selected();
+            syms.get(idx).cloned().unwrap_or_default()
+        };
+
+        // Use pbcopy on macOS, xclip on Linux, clip on Windows.
+        let result = if cfg!(target_os = "macos") {
+            std::process::Command::new("pbcopy")
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut child| {
+                    use std::io::Write;
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        stdin.write_all(text.as_bytes())?;
+                    }
+                    child.wait()
+                })
+        } else if cfg!(target_os = "linux") {
+            std::process::Command::new("xclip")
+                .args(["-selection", "clipboard"])
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut child| {
+                    use std::io::Write;
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        stdin.write_all(text.as_bytes())?;
+                    }
+                    child.wait()
+                })
+        } else {
+            // Unsupported platform.
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "clipboard not supported",
+            ))
+        };
+
+        match result {
+            Ok(_) => self.status_message = "Copied to clipboard".to_string(),
+            Err(e) => self.status_message = format!("Clipboard error: {e}"),
+        }
+    }
+
+    // -- Alert / Notification ------------------------------------------------
+
+    /// Check if any stock just reached 5/5 QC and trigger a bell alert.
+    ///
+    /// Called after draining results. Uses `alert_fired` to avoid repeat bells.
+    fn check_conviction_alert(&mut self) {
+        if self.any_fully_passed() && !self.alert_fired {
+            self.alert_fired = true;
+            // Terminal bell.
+            print!("\x07");
+            self.status_message = "\u{1f514} HIGH CONVICTION - READY".to_string();
+        } else if !self.any_fully_passed() {
+            self.alert_fired = false;
+        }
+    }
+
     // -- Persistence ---------------------------------------------------------
 
     fn persist_preferences(&self) {
@@ -1120,11 +1264,27 @@ impl App {
         if self.skip_persist {
             return;
         }
+        let watchlist_tabs: Vec<config::WatchlistTab> = self
+            .watchlist_tabs
+            .iter()
+            .enumerate()
+            .map(|(i, (name, syms))| config::WatchlistTab {
+                name: name.clone(),
+                // For the active tab, use current watchlist symbols.
+                symbols: if i == self.active_tab {
+                    self.watchlist.symbols().to_vec()
+                } else {
+                    syms.clone()
+                },
+            })
+            .collect();
         let session = Session {
             symbols: self.watchlist.symbols().to_vec(),
             sort_mode: format!("{}", self.sort_mode),
             filter_mode: format!("{}", self.filter_mode),
             view_mode: format!("{}", self.view_mode),
+            watchlist_tabs,
+            active_tab: self.active_tab,
         };
         let _ = config::save_session(&session);
     }

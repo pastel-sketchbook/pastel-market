@@ -99,7 +99,8 @@ pastel-market/
 ├── data/
 │   └── mock.json               # Fallback data for offline/failure modes
 ├── tests/
-│   └── fixtures/               # HTML fixtures for scraper tests
+│   ├── fixture_parsing.rs      # Integration tests for HTML parsers
+│   └── fixtures/               # Captured HTML pages for deterministic testing
 ├── Taskfile.yml                # Task runner: build, check, test, release
 └── AGENTS.md                   # This file
 ```
@@ -200,20 +201,24 @@ Use colon (`:`) as a separator in task names:
 
 ## Keyboard Controls
 - `q` / `Esc`: Quit
+- `?`: Toggle help overlay
 - `Tab` / `BackTab`: Cycle view modes (Watchlist → Scanner → QC)
 - `j` / `Down`: Navigate down in focused panel
 - `k` / `Up`: Navigate up in focused panel
 - `gg`: Jump to first row
 - `G`: Jump to last row
-- `Space` / `Enter`: Toggle selected QC item (QC view only)
+- `Space` / `Enter`: Toggle selected QC item (QC view) / Open chart (Watchlist)
 - `r`: Manual refresh (non-blocking)
 - `s`: Cycle sort mode
 - `f`: Cycle filter mode
 - `t`: Cycle theme
 - `a`: Add symbol to watchlist (Watchlist view)
 - `d`: Delete symbol from watchlist
+- `y`: Copy selected symbol data to clipboard
+- `[` / `]`: Previous / next watchlist tab
 - `n`: Toggle news panel
 - `1`-`5`: Select scanner list (Scanner view)
+- Mouse scroll: navigate tables
 
 ## Terminal Lifecycle
 - `enable_raw_mode()` + `EnterAlternateScreen` on startup

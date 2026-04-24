@@ -1209,7 +1209,19 @@ impl App {
                 self.chart_news_summary_open = false;
             }
             KeyCode::Enter | KeyCode::Char(' ') if self.chart_tab == ChartTab::News => {
-                self.chart_news_summary_open = !self.chart_news_summary_open;
+                if self.chart_news_summary_open {
+                    self.chart_news_summary_open = false;
+                } else {
+                    // Only open if the selected item has a real summary.
+                    let has_summary = self
+                        .chart_news
+                        .get(self.chart_news_selected)
+                        .and_then(|item| item.summary.as_deref())
+                        .is_some_and(|s| !s.is_empty());
+                    if has_summary {
+                        self.chart_news_summary_open = true;
+                    }
+                }
             }
 
             // Navigation in SEC Filings panel.
@@ -2260,9 +2272,14 @@ mod tests {
         assert_eq!(app.chart_news_selected, 1);
         app.handle_key(key(KeyCode::Char('k')));
         assert_eq!(app.chart_news_selected, 0);
-        // Enter toggles summary.
+        // Enter toggles summary (item 0 has a summary).
         app.handle_key(key(KeyCode::Enter));
         assert!(app.chart_news_summary_open);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(!app.chart_news_summary_open);
+        // Navigate to item 1 (no summary) — Enter should NOT open.
+        app.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(app.chart_news_selected, 1);
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.chart_news_summary_open);
     }

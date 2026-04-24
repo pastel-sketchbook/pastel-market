@@ -290,15 +290,6 @@ fn draw_news_list(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rec
 /// Draw inline summary for the selected news item.
 fn draw_news_summary(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
     let item = app.chart_news.get(app.chart_news_selected);
-    let (title, summary) = if let Some(item) = item {
-        let sum = item
-            .summary
-            .as_deref()
-            .unwrap_or("No summary available. Press Enter to close.");
-        (item.title.as_str(), sum)
-    } else {
-        ("", "No article selected.")
-    };
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -311,7 +302,20 @@ fn draw_news_summary(frame: &mut Frame, app: &App, theme: &'static Theme, area: 
         )
         .style(Style::default().bg(theme.chart_bg));
 
-    let text = format!("{title}\n\n{summary}");
+    let text = if let Some(item) = item {
+        let summary = item.summary.as_deref().unwrap_or("");
+        if summary.is_empty() {
+            format!(
+                "{}\n\n{}\n\nNo summary available.\n{}",
+                item.title, item.publisher, item.link
+            )
+        } else {
+            format!("{}\n\n{}", item.publisher, summary)
+        }
+    } else {
+        "No article selected.".to_string()
+    };
+
     let para = Paragraph::new(text)
         .block(block)
         .wrap(ratatui::widgets::Wrap { trim: true })

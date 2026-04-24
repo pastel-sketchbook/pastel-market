@@ -40,6 +40,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 # Misc
 chrono = "0.4.44"
 directories = "6.0.0"
+quick-xml = "0.39.2"
 
 headless_chrome = "1.0.21"
 

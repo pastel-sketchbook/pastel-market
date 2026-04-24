@@ -8,6 +8,7 @@ rust-version.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 directories.workspace = true
+quick-xml.workspace = true
 ratatui.workspace = true
 serde.workspace = true
 serde_json.workspace = true

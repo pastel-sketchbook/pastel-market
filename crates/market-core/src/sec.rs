@@ -164,9 +164,16 @@ fn parse_submissions(json: &serde_json::Value, cik: &str) -> Result<Vec<SecFilin
 // Filing content fetch
 // ---------------------------------------------------------------------------
 
-/// Maximum body size for filing content (500 KB).
-/// Many 10-K filings are multi-MB; we truncate to keep the TUI responsive.
-const MAX_FILING_BYTES: u64 = 512_000;
+/// Timeout for SEC filing content requests (longer than metadata).
+const SEC_CONTENT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Build a ureq agent with a longer timeout for filing content.
+fn sec_content_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(SEC_CONTENT_TIMEOUT))
+        .build()
+        .new_agent()
+}
 
 /// Fetch a filing document and extract readable text.
 ///
@@ -179,22 +186,26 @@ const MAX_FILING_BYTES: u64 = 512_000;
 ///
 /// Returns an error if the document cannot be fetched or read.
 pub fn fetch_filing_content(url: &str) -> Result<String> {
-    let mut body = sec_agent()
+    let mut body = sec_content_agent()
         .get(url)
         .header("User-Agent", USER_AGENT)
-        .header("Accept", "text/html, application/xhtml+xml, text/xml")
+        .header("Accept", "text/html, application/xhtml+xml, text/xml, */*")
         .call()
         .with_context(|| format!("failed to fetch filing from {url}"))?
         .into_body();
 
-    let buf = body
-        .with_config()
-        .limit(MAX_FILING_BYTES)
-        .read_to_vec()
+    let html = body
+        .read_to_string()
         .context("failed to read filing body")?;
 
-    let html = String::from_utf8_lossy(&buf);
-    let text = strip_html_to_text(&html);
+    // Truncate very large filings before parsing to keep TUI responsive.
+    let truncated = if html.len() > 512_000 {
+        &html[..512_000]
+    } else {
+        &html
+    };
+
+    let text = strip_html_to_text(truncated);
     debug!(url, chars = text.len(), "fetched filing content");
     Ok(text)
 }

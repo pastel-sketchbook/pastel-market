@@ -16,7 +16,6 @@ use anyhow::{Context, Result};
 use tracing::debug;
 
 use crate::domain::SecFiling;
-use crate::http::USER_AGENT;
 
 /// EDGAR company filings endpoint (submissions).
 const SUBMISSIONS_URL: &str = "https://data.sec.gov/submissions/CIK";
@@ -44,10 +43,21 @@ fn cik_map() -> &'static HashMap<String, String> {
     })
 }
 
+/// Build the SEC User-Agent string.
+///
+/// SEC EDGAR fair access policy requires a contact email in the User-Agent.
+/// Reads `SEC_CONTACT_EMAIL` env var; falls back to `user@example.com`.
+fn sec_user_agent() -> String {
+    let email = std::env::var("SEC_CONTACT_EMAIL")
+        .unwrap_or_else(|_| "user@example.com".to_owned());
+    format!("pastel-market/{} ({email})", env!("CARGO_PKG_VERSION"))
+}
+
 /// Build a ureq agent with a short timeout for SEC requests.
 fn sec_agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_global(Some(SEC_TIMEOUT))
+        .user_agent(&*sec_user_agent())
         .build()
         .new_agent()
 }
@@ -89,7 +99,6 @@ fn fetch_filings_by_cik(cik: &str) -> Result<Vec<SecFiling>> {
     let url = format!("{SUBMISSIONS_URL}{cik}.json");
     let mut body = sec_agent()
         .get(&url)
-        .header("User-Agent", USER_AGENT)
         .header("Accept", "application/json")
         .call()
         .context("SEC submissions request failed")?
@@ -171,6 +180,7 @@ const SEC_CONTENT_TIMEOUT: Duration = Duration::from_secs(15);
 fn sec_content_agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_global(Some(SEC_CONTENT_TIMEOUT))
+        .user_agent(&*sec_user_agent())
         .build()
         .new_agent()
 }
@@ -188,7 +198,6 @@ fn sec_content_agent() -> ureq::Agent {
 pub fn fetch_filing_content(url: &str) -> Result<String> {
     let mut body = sec_content_agent()
         .get(url)
-        .header("User-Agent", USER_AGENT)
         .header("Accept", "text/html, application/xhtml+xml, text/xml, */*")
         .call()
         .with_context(|| format!("failed to fetch filing from {url}"))?

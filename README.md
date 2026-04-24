@@ -38,8 +38,9 @@ Monitor markets. Screen stocks. Gauge earnings. Inspect quality. Signal convicti
 - **News reader** — per-stock news headlines with publisher, age, and inline
   summary toggle
 - **SEC filings** — recent EDGAR filings (10-K, 10-Q, 8-K, Form 4) with
-  color-coded form types; ticker→CIK mapping embedded at compile time (~10K
-  tickers) for instant resolution without runtime downloads
+  color-coded form types and inline content viewer; ticker→CIK mapping
+  embedded at compile time (~10K tickers); set `SEC_CONTACT_EMAIL` env var
+  for reliable access (SEC fair access policy requires contact info)
 - **16 themes** — 8 dark + 8 light, cycled with `t`, persisted across sessions
 - **Non-blocking UI** — all HTTP fetches run on background threads; the event
   loop never stalls
@@ -49,6 +50,8 @@ Monitor markets. Screen stocks. Gauge earnings. Inspect quality. Signal convicti
 - Rust toolchain (MSRV 1.95.0, edition 2024)
 - Terminal emulator supporting ANSI colors and alternate screen
 - Internet access for Yahoo Finance and Finviz (falls back to mock data)
+- `SEC_CONTACT_EMAIL` env var for SEC EDGAR access (optional; falls back to
+  `user@example.com`)
 
 ## Build and run
 
@@ -90,9 +93,10 @@ task run
 |---|---|
 | `Tab` / `BackTab` | Cycle panel: Chart → News → SEC Filings |
 | `1`–`8` / `←` / `→` | Switch chart range (Chart tab) |
-| `j` / `k` | Navigate headlines / filings (News / SEC tab) |
-| `Enter` | Toggle inline news summary (News tab) |
-| `Esc` | Close overlay (or close summary first) |
+| `j` / `k` | Navigate headlines / filings / scroll content |
+| `Enter` / `Space` | Toggle inline summary (News) / fetch filing content (SEC) |
+| `o` | Open filing in system browser (SEC tab) |
+| `Esc` | Close overlay (or close detail/summary first) |
 
 ## Architecture
 

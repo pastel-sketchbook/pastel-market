@@ -165,6 +165,25 @@ pub struct NewsItem {
     pub publisher: String,
     /// Link to the full article.
     pub link: String,
+    /// Brief summary (populated on demand when user selects).
+    pub summary: Option<String>,
+    /// Publication timestamp (Unix epoch seconds).
+    pub publish_time: Option<i64>,
+}
+
+/// An SEC EDGAR filing for a company.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecFiling {
+    /// Filing type (e.g. "10-K", "10-Q", "8-K", "4").
+    pub form_type: String,
+    /// Filing date (YYYY-MM-DD).
+    pub filed_date: String,
+    /// Primary document description.
+    pub description: String,
+    /// Link to the filing on SEC.gov.
+    pub link: String,
+    /// Accession number (unique identifier).
+    pub accession: String,
 }
 
 /// Holds the user's watchlist and the fetched quote data.

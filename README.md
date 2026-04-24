@@ -33,6 +33,12 @@ Monitor markets. Screen stocks. Gauge earnings. Inspect quality. Signal convicti
 - **Clipboard export** — `y` copies selected symbol data to system clipboard
 - **Mouse support** — scroll wheel navigation in watchlist and scanner tables
 - **Help overlay** — `?` shows all keybindings in a popup
+- **Performance chart** — interactive line chart overlay with selectable time
+  ranges (1D–5Y) and tabbed bottom panel for news and SEC filings
+- **News reader** — per-stock news headlines with publisher, age, and inline
+  summary toggle
+- **SEC filings** — recent EDGAR filings (10-K, 10-Q, 8-K, Form 4) with
+  color-coded form types, fetched directly from SEC EDGAR API
 - **16 themes** — 8 dark + 8 light, cycled with `t`, persisted across sessions
 - **Non-blocking UI** — all HTTP fetches run on background threads; the event
   loop never stalls
@@ -76,6 +82,16 @@ task run
 | `[` / `]` | Previous / next watchlist tab |
 | `n` | Toggle news panel |
 | `1`–`5` | Select scanner (Scanner view) |
+
+### Chart Overlay
+
+| Key | Action |
+|---|---|
+| `Tab` / `BackTab` | Cycle panel: Chart → News → SEC Filings |
+| `1`–`8` / `←` / `→` | Switch chart range (Chart tab) |
+| `j` / `k` | Navigate headlines / filings (News / SEC tab) |
+| `Enter` | Toggle inline news summary (News tab) |
+| `Esc` | Close overlay (or close summary first) |
 
 ## Architecture
 

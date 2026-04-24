@@ -11,7 +11,7 @@ use market_core::config::{self, Preferences, QcSession, Session};
 use market_core::domain::mock::MockData;
 use market_core::domain::{
     ChartRange, FilterMode, MarketStatus, NewsItem, PricePoint, Quote, ScannerList, ScreenerResult,
-    SortMode, TopMovers, ViewMode, Watchlist,
+    SecFiling, SortMode, TopMovers, ViewMode, Watchlist,
 };
 use market_core::theme::{self, Theme};
 use whispers::WhisperResult;
@@ -50,6 +50,40 @@ pub enum InputMode {
     #[default]
     Normal,
     Adding,
+}
+
+/// Active tab in the chart overlay bottom panel.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ChartTab {
+    /// Price chart only (no bottom panel visible).
+    #[default]
+    Chart,
+    /// News headlines + inline summary.
+    News,
+    /// SEC EDGAR filings.
+    SecFilings,
+}
+
+impl ChartTab {
+    /// Cycle to the next tab.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Chart => Self::News,
+            Self::News => Self::SecFilings,
+            Self::SecFilings => Self::Chart,
+        }
+    }
+
+    /// Cycle to the previous tab.
+    #[must_use]
+    pub const fn prev(self) -> Self {
+        match self {
+            Self::Chart => Self::SecFilings,
+            Self::News => Self::Chart,
+            Self::SecFilings => Self::News,
+        }
+    }
 }
 
 /// Which panel currently receives keyboard focus (QC view only).
@@ -135,6 +169,12 @@ pub struct App {
     pub chart_range: ChartRange,
     pub chart_data: Vec<PricePoint>,
     pub chart_loading: bool,
+    pub chart_tab: ChartTab,
+    pub chart_news: Vec<NewsItem>,
+    pub chart_news_selected: usize,
+    pub chart_news_summary_open: bool,
+    pub chart_sec_filings: Vec<SecFiling>,
+    pub chart_sec_selected: usize,
 
     // -- Theme --
     pub theme_index: usize,
@@ -251,7 +291,17 @@ impl App {
             chart_range: ChartRange::default(),
             chart_data: Vec::new(),
             chart_loading: false,
+            chart_tab: ChartTab::default(),
+            chart_news: Vec::new(),
+            chart_news_selected: 0,
+            chart_news_summary_open: false,
+            chart_sec_filings: Vec::new(),
+            chart_sec_selected: 0,
+
+            // -- Theme --
             theme_index,
+
+            // -- Internal state --
             tick: 0,
             ticks_since_refresh: 0,
             pending_g: false,
@@ -310,6 +360,12 @@ impl App {
             chart_range: ChartRange::default(),
             chart_data: Vec::new(),
             chart_loading: false,
+            chart_tab: ChartTab::default(),
+            chart_news: Vec::new(),
+            chart_news_selected: 0,
+            chart_news_summary_open: false,
+            chart_sec_filings: Vec::new(),
+            chart_sec_selected: 0,
             theme_index: 0,
             tick: 0,
             ticks_since_refresh: 0,
@@ -701,6 +757,16 @@ impl App {
                 FetchResult::News { items } => {
                     self.news_headlines = items;
                 }
+                FetchResult::StockNews { ticker, items } => {
+                    if self.chart_open && self.chart_symbol == ticker {
+                        self.chart_news = items;
+                    }
+                }
+                FetchResult::SecFilings { ticker, filings } => {
+                    if self.chart_open && self.chart_symbol == ticker {
+                        self.chart_sec_filings = filings;
+                    }
+                }
                 FetchResult::Scanner {
                     quotes,
                     screener_results,
@@ -1038,9 +1104,17 @@ impl App {
         self.chart_range = ChartRange::default();
         self.chart_data.clear();
         self.chart_loading = true;
+        self.chart_tab = ChartTab::default();
+        self.chart_news.clear();
+        self.chart_news_selected = 0;
+        self.chart_news_summary_open = false;
+        self.chart_sec_filings.clear();
+        self.chart_sec_selected = 0;
 
         if let Some(worker) = &self.worker {
-            worker.submit_chart(sym, self.chart_range);
+            worker.submit_chart(sym.clone(), self.chart_range);
+            worker.submit_stock_news(sym.clone());
+            worker.submit_sec_filings(sym);
         }
     }
 
@@ -1049,6 +1123,8 @@ impl App {
         self.chart_open = false;
         self.chart_data.clear();
         self.chart_loading = false;
+        self.chart_news.clear();
+        self.chart_sec_filings.clear();
     }
 
     /// Switch the chart to a different time range.
@@ -1067,21 +1143,93 @@ impl App {
 
     fn handle_chart_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => self.close_chart(),
-            KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                if self.chart_news_summary_open {
+                    self.chart_news_summary_open = false;
+                } else {
+                    self.close_chart();
+                }
+            }
+
+            // Tab / BackTab: cycle chart panel tabs.
+            KeyCode::Tab => {
+                self.chart_tab = self.chart_tab.next();
+            }
+            KeyCode::BackTab => {
+                self.chart_tab = self.chart_tab.prev();
+            }
+
+            // Range switching (only when on Chart tab).
+            KeyCode::Right | KeyCode::Char('l') if self.chart_tab == ChartTab::Chart => {
                 self.switch_chart_range(self.chart_range.next());
             }
-            KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => {
+            KeyCode::Left | KeyCode::Char('h') if self.chart_tab == ChartTab::Chart => {
                 self.switch_chart_range(self.chart_range.prev());
             }
-            KeyCode::Char('1') => self.switch_chart_range(ChartRange::Day1),
-            KeyCode::Char('2') => self.switch_chart_range(ChartRange::Day5),
-            KeyCode::Char('3') => self.switch_chart_range(ChartRange::Month1),
-            KeyCode::Char('4') => self.switch_chart_range(ChartRange::Month3),
-            KeyCode::Char('5') => self.switch_chart_range(ChartRange::Month6),
-            KeyCode::Char('6') => self.switch_chart_range(ChartRange::Ytd),
-            KeyCode::Char('7') => self.switch_chart_range(ChartRange::Year1),
-            KeyCode::Char('8') => self.switch_chart_range(ChartRange::Year5),
+            KeyCode::Char('1') if self.chart_tab == ChartTab::Chart => {
+                self.switch_chart_range(ChartRange::Day1);
+            }
+            KeyCode::Char('2') if self.chart_tab == ChartTab::Chart => {
+                self.switch_chart_range(ChartRange::Day5);
+            }
+            KeyCode::Char('3') if self.chart_tab == ChartTab::Chart => {
+                self.switch_chart_range(ChartRange::Month1);
+            }
+            KeyCode::Char('4') if self.chart_tab == ChartTab::Chart => {
+                self.switch_chart_range(ChartRange::Month3);
+            }
+            KeyCode::Char('5') if self.chart_tab == ChartTab::Chart => {
+                self.switch_chart_range(ChartRange::Month6);
+            }
+            KeyCode::Char('6') if self.chart_tab == ChartTab::Chart => {
+                self.switch_chart_range(ChartRange::Ytd);
+            }
+            KeyCode::Char('7') if self.chart_tab == ChartTab::Chart => {
+                self.switch_chart_range(ChartRange::Year1);
+            }
+            KeyCode::Char('8') if self.chart_tab == ChartTab::Chart => {
+                self.switch_chart_range(ChartRange::Year5);
+            }
+
+            // Navigation in News panel.
+            KeyCode::Down | KeyCode::Char('j')
+                if self.chart_tab == ChartTab::News && !self.chart_news.is_empty() =>
+            {
+                self.chart_news_selected =
+                    (self.chart_news_selected + 1) % self.chart_news.len();
+                self.chart_news_summary_open = false;
+            }
+            KeyCode::Up | KeyCode::Char('k')
+                if self.chart_tab == ChartTab::News && !self.chart_news.is_empty() =>
+            {
+                self.chart_news_selected = self
+                    .chart_news_selected
+                    .checked_sub(1)
+                    .unwrap_or(self.chart_news.len().saturating_sub(1));
+                self.chart_news_summary_open = false;
+            }
+            KeyCode::Enter | KeyCode::Char(' ') if self.chart_tab == ChartTab::News => {
+                self.chart_news_summary_open = !self.chart_news_summary_open;
+            }
+
+            // Navigation in SEC Filings panel.
+            KeyCode::Down | KeyCode::Char('j')
+                if self.chart_tab == ChartTab::SecFilings
+                    && !self.chart_sec_filings.is_empty() =>
+            {
+                self.chart_sec_selected =
+                    (self.chart_sec_selected + 1) % self.chart_sec_filings.len();
+            }
+            KeyCode::Up | KeyCode::Char('k')
+                if self.chart_tab == ChartTab::SecFilings
+                    && !self.chart_sec_filings.is_empty() =>
+            {
+                self.chart_sec_selected = self
+                    .chart_sec_selected
+                    .checked_sub(1)
+                    .unwrap_or(self.chart_sec_filings.len().saturating_sub(1));
+            }
+
             KeyCode::Char('t') => self.next_theme(),
             _ => {}
         }
@@ -1444,6 +1592,8 @@ mod tests {
                     title: "Test headline".to_string(),
                     publisher: "Test".to_string(),
                     link: String::new(),
+                    summary: None,
+                    publish_time: None,
                 }],
             }
         }
@@ -2051,5 +2201,126 @@ mod tests {
         assert!(app.chart_patterns.contains_key("MSFT"));
         assert_eq!(app.chart_patterns.get("AAPL").unwrap(), "Mild bullish");
         assert_eq!(app.chart_patterns.get("MSFT").unwrap(), "Mild bearish");
+    }
+
+    // -- Chart tab cycling and panel navigation --------------------------------
+
+    #[test]
+    fn chart_tab_cycles_with_tab_key() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.chart_tab, ChartTab::Chart);
+        app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.chart_tab, ChartTab::News);
+        app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.chart_tab, ChartTab::SecFilings);
+        app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.chart_tab, ChartTab::Chart);
+    }
+
+    #[test]
+    fn chart_tab_backtab_cycles_reverse() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.chart_tab, ChartTab::Chart);
+        app.handle_key(key(KeyCode::BackTab));
+        assert_eq!(app.chart_tab, ChartTab::SecFilings);
+        app.handle_key(key(KeyCode::BackTab));
+        assert_eq!(app.chart_tab, ChartTab::News);
+    }
+
+    #[test]
+    fn chart_news_navigation() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        // Switch to News tab and populate some news.
+        app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.chart_tab, ChartTab::News);
+        app.chart_news = vec![
+            market_core::domain::NewsItem {
+                title: "Headline 1".into(),
+                link: String::new(),
+                publisher: "Test".into(),
+                summary: Some("Summary 1".into()),
+                publish_time: None,
+            },
+            market_core::domain::NewsItem {
+                title: "Headline 2".into(),
+                link: String::new(),
+                publisher: "Test".into(),
+                summary: None,
+                publish_time: None,
+            },
+        ];
+        assert_eq!(app.chart_news_selected, 0);
+        app.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(app.chart_news_selected, 1);
+        app.handle_key(key(KeyCode::Char('k')));
+        assert_eq!(app.chart_news_selected, 0);
+        // Enter toggles summary.
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.chart_news_summary_open);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(!app.chart_news_summary_open);
+    }
+
+    #[test]
+    fn chart_sec_navigation() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        // Switch to SEC tab.
+        app.handle_key(key(KeyCode::Tab));
+        app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.chart_tab, ChartTab::SecFilings);
+        app.chart_sec_filings = vec![
+            market_core::domain::SecFiling {
+                form_type: "10-K".into(),
+                filed_date: "2026-01-15".into(),
+                description: "Annual report".into(),
+                link: String::new(),
+                accession: String::new(),
+            },
+            market_core::domain::SecFiling {
+                form_type: "8-K".into(),
+                filed_date: "2026-02-20".into(),
+                description: "Current report".into(),
+                link: String::new(),
+                accession: String::new(),
+            },
+        ];
+        assert_eq!(app.chart_sec_selected, 0);
+        app.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(app.chart_sec_selected, 1);
+        app.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(app.chart_sec_selected, 0); // wraps
+    }
+
+    #[test]
+    fn chart_range_keys_ignored_on_news_tab() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        let initial_range = app.chart_range;
+        app.handle_key(key(KeyCode::Tab)); // switch to News
+        app.handle_key(key(KeyCode::Char('3'))); // should NOT change range
+        assert_eq!(app.chart_range, initial_range);
+    }
+
+    #[test]
+    fn close_chart_resets_tab_state() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        app.handle_key(key(KeyCode::Tab)); // News
+        assert_eq!(app.chart_tab, ChartTab::News);
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.chart_open);
+        // Reopen — should be back to Chart tab.
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.chart_tab, ChartTab::Chart);
     }
 }

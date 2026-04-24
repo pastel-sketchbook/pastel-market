@@ -1,19 +1,21 @@
 //! Performance chart overlay — renders a full-screen line chart with
-//! selectable time range tabs.
+//! selectable time range tabs and a bottom panel for news / SEC filings.
 
 use chrono::{DateTime, Utc};
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Axis, Block, Borders, Chart, Clear, Dataset, GraphType, Paragraph, Widget};
+use ratatui::widgets::{
+    Axis, Block, Borders, Chart, Clear, Dataset, GraphType, List, ListItem, Paragraph, Widget,
+};
 
 use market_core::domain::ChartRange;
 use market_core::theme::Theme;
 
-use crate::app::App;
+use crate::app::{App, ChartTab};
 
 /// Draw the chart overlay centered on the screen.
 pub fn draw_chart_overlay(frame: &mut Frame, app: &App, theme: &'static Theme) {
@@ -29,6 +31,48 @@ pub fn draw_chart_overlay(frame: &mut Frame, app: &App, theme: &'static Theme) {
         chart_area,
     );
 
+    let title = format!(" {} — Performance ", app.chart_symbol);
+
+    // Outer block.
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent))
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().bg(theme.chart_bg).fg(theme.fg));
+    frame.render_widget(block, chart_area);
+
+    let has_panel = app.chart_tab != ChartTab::Chart;
+
+    // Split inner area: chart section + optional bottom panel.
+    let inner = chart_area.inner(Margin::new(1, 1));
+    let sections = if has_panel {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(inner)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(100)])
+            .split(inner)
+    };
+
+    // Draw chart in top section.
+    draw_chart_section(frame, app, theme, sections[0]);
+
+    // Draw bottom panel if a tab is active.
+    if has_panel && sections.len() > 1 {
+        draw_bottom_panel(frame, app, theme, sections[1]);
+    }
+}
+
+/// Draw the chart section: range tabs, chart, help bar.
+fn draw_chart_section(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
     // Build the range tab bar.
     let tab_spans: Vec<Span> = ChartRange::ALL
         .iter()
@@ -47,8 +91,6 @@ pub fn draw_chart_overlay(frame: &mut Frame, app: &App, theme: &'static Theme) {
         })
         .collect();
 
-    let title = format!(" {} — Performance ", app.chart_symbol);
-
     let inner_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -56,20 +98,7 @@ pub fn draw_chart_overlay(frame: &mut Frame, app: &App, theme: &'static Theme) {
             Constraint::Min(3),    // chart
             Constraint::Length(1), // help bar
         ])
-        .split(chart_area.inner(Margin::new(1, 1)));
-
-    // Draw outer block.
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent))
-        .title(Span::styled(
-            title,
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::BOLD),
-        ))
-        .style(Style::default().bg(theme.chart_bg).fg(theme.fg));
-    frame.render_widget(block, chart_area);
+        .split(area);
 
     // Range tab bar.
     let tabs = Paragraph::new(Line::from(tab_spans))
@@ -93,18 +122,281 @@ pub fn draw_chart_overlay(frame: &mut Frame, app: &App, theme: &'static Theme) {
         draw_line_chart(frame, app, theme, chart_area_padded);
     }
 
-    // Help bar.
-    let help = Paragraph::new(Line::from(vec![
-        Span::styled("1-8", Style::default().fg(theme.accent)),
-        Span::styled(" range  ", Style::default().fg(theme.muted)),
-        Span::styled("←/→", Style::default().fg(theme.accent)),
-        Span::styled(" prev/next  ", Style::default().fg(theme.muted)),
-        Span::styled("Esc", Style::default().fg(theme.accent)),
-        Span::styled(" close", Style::default().fg(theme.muted)),
-    ]))
-    .alignment(Alignment::Center)
-    .style(Style::default().bg(theme.chart_bg));
+    // Help bar with panel tab indicators.
+    let help = Paragraph::new(Line::from(build_help_spans(app, theme)))
+        .alignment(Alignment::Center)
+        .style(Style::default().bg(theme.chart_bg));
     frame.render_widget(help, inner_layout[2]);
+}
+
+/// Build help bar spans showing available keys and panel tab indicators.
+fn build_help_spans(app: &App, theme: &'static Theme) -> Vec<Span<'static>> {
+    let mut spans = vec![
+        Span::styled("Tab", Style::default().fg(theme.accent)),
+        Span::styled(" panel  ", Style::default().fg(theme.muted)),
+    ];
+
+    if app.chart_tab == ChartTab::Chart {
+        spans.extend([
+            Span::styled("1-8", Style::default().fg(theme.accent)),
+            Span::styled(" range  ", Style::default().fg(theme.muted)),
+            Span::styled("←/→", Style::default().fg(theme.accent)),
+            Span::styled(" prev/next  ", Style::default().fg(theme.muted)),
+        ]);
+    } else {
+        spans.extend([
+            Span::styled("j/k", Style::default().fg(theme.accent)),
+            Span::styled(" navigate  ", Style::default().fg(theme.muted)),
+        ]);
+        if app.chart_tab == ChartTab::News {
+            spans.extend([
+                Span::styled("Enter", Style::default().fg(theme.accent)),
+                Span::styled(" summary  ", Style::default().fg(theme.muted)),
+            ]);
+        }
+    }
+
+    spans.extend([
+        Span::styled("Esc", Style::default().fg(theme.accent)),
+        Span::styled(" close  ", Style::default().fg(theme.muted)),
+    ]);
+
+    // Tab indicators.
+    spans.push(Span::raw(" "));
+    for tab in [ChartTab::Chart, ChartTab::News, ChartTab::SecFilings] {
+        let label = match tab {
+            ChartTab::Chart => "Chart",
+            ChartTab::News => "News",
+            ChartTab::SecFilings => "SEC",
+        };
+        if tab == app.chart_tab {
+            spans.push(Span::styled(
+                format!(" {label} "),
+                Style::default()
+                    .fg(theme.chart_bg)
+                    .bg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            spans.push(Span::styled(
+                format!(" {label} "),
+                Style::default().fg(theme.muted),
+            ));
+        }
+    }
+
+    spans
+}
+
+/// Draw the bottom panel (News or SEC Filings).
+fn draw_bottom_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
+    match app.chart_tab {
+        ChartTab::News => draw_news_panel(frame, app, theme, area),
+        ChartTab::SecFilings => draw_sec_panel(frame, app, theme, area),
+        ChartTab::Chart => {} // unreachable — only called when has_panel
+    }
+}
+
+/// Draw the news headlines panel with optional inline summary.
+fn draw_news_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+
+    if app.chart_news.is_empty() {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border))
+            .title(" News ")
+            .title_style(title_style)
+            .style(Style::default().bg(theme.chart_bg));
+        let msg = Paragraph::new("Loading news...")
+            .alignment(Alignment::Center)
+            .block(block)
+            .style(Style::default().fg(theme.muted).bg(theme.chart_bg));
+        frame.render_widget(msg, area);
+        return;
+    }
+
+    // If summary is open, split: list on left, summary on right.
+    if app.chart_news_summary_open {
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+        draw_news_list(frame, app, theme, cols[0]);
+        draw_news_summary(frame, app, theme, cols[1]);
+    } else {
+        draw_news_list(frame, app, theme, area);
+    }
+}
+
+/// Draw the news headline list.
+fn draw_news_list(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
+    let items: Vec<ListItem> = app
+        .chart_news
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let age = item.publish_time.map_or_else(String::new, |ts| {
+                let elapsed = Utc::now().timestamp() - ts;
+                if elapsed < 3600 {
+                    format!(" {}m", elapsed / 60)
+                } else if elapsed < 86400 {
+                    format!(" {}h", elapsed / 3600)
+                } else {
+                    format!(" {}d", elapsed / 86400)
+                }
+            });
+
+            let style = if i == app.chart_news_selected {
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.fg)
+            };
+            let prefix = if i == app.chart_news_selected {
+                "▶ "
+            } else {
+                "  "
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(item.title.clone(), style),
+                Span::styled(
+                    format!("  — {}{age}", item.publisher),
+                    Style::default().fg(theme.muted),
+                ),
+            ]))
+        })
+        .collect();
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border))
+        .title(format!(" News ({}) ", app.chart_news.len()))
+        .title_style(
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(theme.chart_bg));
+
+    let list = List::new(items).block(block);
+    frame.render_widget(list, area);
+}
+
+/// Draw inline summary for the selected news item.
+fn draw_news_summary(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
+    let item = app.chart_news.get(app.chart_news_selected);
+    let (title, summary) = if let Some(item) = item {
+        let sum = item
+            .summary
+            .as_deref()
+            .unwrap_or("No summary available. Press Enter to close.");
+        (item.title.as_str(), sum)
+    } else {
+        ("", "No article selected.")
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent))
+        .title(" Summary ")
+        .title_style(
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(theme.chart_bg));
+
+    let text = format!("{title}\n\n{summary}");
+    let para = Paragraph::new(text)
+        .block(block)
+        .wrap(ratatui::widgets::Wrap { trim: true })
+        .style(Style::default().fg(theme.fg).bg(theme.chart_bg));
+    frame.render_widget(para, area);
+}
+
+/// Draw SEC EDGAR filings panel.
+fn draw_sec_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+
+    if app.chart_sec_filings.is_empty() {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border))
+            .title(" SEC Filings ")
+            .title_style(title_style)
+            .style(Style::default().bg(theme.chart_bg));
+        let msg = Paragraph::new("Loading SEC filings...")
+            .alignment(Alignment::Center)
+            .block(block)
+            .style(Style::default().fg(theme.muted).bg(theme.chart_bg));
+        frame.render_widget(msg, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .chart_sec_filings
+        .iter()
+        .enumerate()
+        .map(|(i, filing)| {
+            let style = if i == app.chart_sec_selected {
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.fg)
+            };
+            let prefix = if i == app.chart_sec_selected {
+                "▶ "
+            } else {
+                "  "
+            };
+
+            // Color-code by filing type.
+            let form_color = match filing.form_type.as_str() {
+                "10-K" => Color::Rgb(181, 234, 215), // green pastel
+                "10-Q" => Color::Rgb(155, 207, 232),  // blue pastel
+                "8-K" => Color::Rgb(255, 218, 193),   // orange pastel
+                "4" => Color::Rgb(199, 178, 232),      // purple pastel
+                _ => theme.fg,
+            };
+
+            let desc = if filing.description.is_empty() {
+                String::new()
+            } else {
+                format!("  {}", filing.description)
+            };
+
+            ListItem::new(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(
+                    format!("{:<6}", filing.form_type),
+                    Style::default().fg(form_color).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("  {}  ", filing.filed_date),
+                    Style::default().fg(theme.muted),
+                ),
+                Span::styled(desc, style),
+            ]))
+        })
+        .collect();
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border))
+        .title(format!(" SEC Filings ({}) ", app.chart_sec_filings.len()))
+        .title_style(title_style)
+        .style(Style::default().bg(theme.chart_bg));
+
+    let list = List::new(items).block(block);
+    frame.render_widget(list, area);
 }
 
 /// Render the actual line chart from `app.chart_data`.

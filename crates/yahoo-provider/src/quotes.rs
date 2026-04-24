@@ -124,6 +124,8 @@ pub fn parse_news_response(body: &serde_json::Value) -> Vec<NewsItem> {
                 title: title.to_string(),
                 publisher: v["publisher"].as_str().unwrap_or("Unknown").to_string(),
                 link: v["link"].as_str().unwrap_or("").to_string(),
+                summary: None,
+                publish_time: v["providerPublishTime"].as_i64(),
             })
         })
         .collect()

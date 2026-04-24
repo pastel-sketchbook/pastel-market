@@ -9,7 +9,9 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread;
 
-use market_core::domain::{ChartRange, NewsItem, PricePoint, Quote, ScannerList, ScreenerResult};
+use market_core::domain::{
+    ChartRange, NewsItem, PricePoint, Quote, ScannerList, ScreenerResult, SecFiling,
+};
 use whispers::WhisperResult;
 use yahoo_provider::QuoteProvider;
 
@@ -40,6 +42,16 @@ pub enum FetchResult {
     },
     /// News headlines.
     News { items: Vec<NewsItem> },
+    /// News headlines scoped to the chart overlay (per-stock).
+    StockNews {
+        ticker: String,
+        items: Vec<NewsItem>,
+    },
+    /// SEC EDGAR filings for a ticker.
+    SecFilings {
+        ticker: String,
+        filings: Vec<SecFiling>,
+    },
     /// Scanner quotes (Yahoo screener or trending).
     Scanner {
         quotes: Vec<Quote>,
@@ -241,6 +253,47 @@ impl Worker {
             let result = match client.fetch_news(&symbol) {
                 Ok(items) => FetchResult::News { items },
                 Err(_) => FetchResult::News { items: Vec::new() },
+            };
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Fetch news headlines for the chart overlay (per-stock).
+    pub fn submit_stock_news(&self, ticker: String) {
+        let tx = self.tx.clone();
+        let client = Arc::clone(&self.client);
+        let sym = ticker.clone();
+        thread::spawn(move || {
+            let result = match client.fetch_news(&sym) {
+                Ok(items) => FetchResult::StockNews {
+                    ticker,
+                    items,
+                },
+                Err(_) => FetchResult::StockNews {
+                    ticker,
+                    items: Vec::new(),
+                },
+            };
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Fetch SEC EDGAR filings in the background.
+    pub fn submit_sec_filings(&self, ticker: String) {
+        let tx = self.tx.clone();
+        thread::spawn(move || {
+            let result = match market_core::sec::fetch_sec_filings(&ticker) {
+                Ok(filings) => FetchResult::SecFilings {
+                    ticker,
+                    filings,
+                },
+                Err(e) => {
+                    tracing::warn!(error = %e, "SEC filing fetch failed");
+                    FetchResult::SecFilings {
+                        ticker,
+                        filings: Vec::new(),
+                    }
+                }
             };
             let _ = tx.send(result);
         });

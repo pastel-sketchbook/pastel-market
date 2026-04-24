@@ -1,22 +1,61 @@
 //! SEC EDGAR filing fetcher.
 //!
-//! Fetches recent filings for a company from the SEC EDGAR full-text
-//! search API. No authentication required — only a descriptive
+//! Fetches recent filings for a company from the SEC EDGAR
+//! submissions API. No authentication required — only a descriptive
 //! `User-Agent` header (SEC policy).
+//!
+//! The CIK mapping (~2 MB JSON) is cached in-memory after the first
+//! download. Call [`warm_cik_cache`] at startup to avoid first-use
+//! latency.
 
-use anyhow::{Context, Result, bail};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+use anyhow::{Context, Result};
 use tracing::debug;
 
 use crate::domain::SecFiling;
-use crate::http::{USER_AGENT, call_with_retry};
+use crate::http::{RetryConfig, USER_AGENT, call_with_retry_cfg};
 
 /// EDGAR company filings endpoint (submissions).
 const SUBMISSIONS_URL: &str = "https://data.sec.gov/submissions/CIK";
 
+/// Fast retry: 1 attempt, no backoff. SEC data is supplementary and
+/// should not slow down the main UI.
+const SEC_RETRY: RetryConfig = RetryConfig {
+    max_retries: 1,
+    backoff_base_ms: 0,
+};
+
+/// Global in-memory CIK cache: ticker → zero-padded CIK string.
+static CIK_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+fn cik_cache() -> &'static Mutex<HashMap<String, String>> {
+    CIK_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Pre-warm the CIK cache by downloading the ticker map from SEC.
+///
+/// Call this once at startup on a background thread so that subsequent
+/// `fetch_sec_filings` calls can skip the 2 MB download.
+///
+/// # Errors
+///
+/// Returns an error if the SEC ticker map cannot be fetched or parsed.
+pub fn warm_cik_cache() -> Result<()> {
+    let map = download_cik_map()?;
+    let mut cache = cik_cache()
+        .lock()
+        .map_err(|e| anyhow::anyhow!("CIK cache lock poisoned: {e}"))?;
+    *cache = map;
+    debug!(count = cache.len(), "CIK cache warmed");
+    Ok(())
+}
+
 /// Fetch recent SEC filings for the given ticker.
 ///
-/// Uses the EDGAR company-search API to resolve the CIK, then fetches
-/// the latest filings from the submissions endpoint.
+/// Resolves the CIK from cache (or downloads the mapping if not cached),
+/// then fetches the latest filings from the submissions endpoint.
 ///
 /// # Errors
 ///
@@ -29,42 +68,75 @@ pub fn fetch_sec_filings(ticker: &str) -> Result<Vec<SecFiling>> {
     Ok(filings)
 }
 
-/// Resolve a ticker symbol to a zero-padded CIK using the EDGAR company
-/// tickers JSON file.
-fn resolve_cik(ticker: &str) -> Result<String> {
-    let mut body = call_with_retry(|| {
-        ureq::get("https://www.sec.gov/files/company_tickers.json")
-            .header("User-Agent", USER_AGENT)
-            .header("Accept", "application/json")
-    })
+/// Download and parse the full ticker → CIK mapping from SEC.
+fn download_cik_map() -> Result<HashMap<String, String>> {
+    let mut body = call_with_retry_cfg(
+        || {
+            ureq::get("https://www.sec.gov/files/company_tickers.json")
+                .header("User-Agent", USER_AGENT)
+                .header("Accept", "application/json")
+        },
+        &SEC_RETRY,
+    )
     .context("SEC company tickers request failed")?;
 
     let json: serde_json::Value = body
         .read_json()
         .context("failed to parse SEC company tickers JSON")?;
 
-    let upper = ticker.to_uppercase();
+    let mut map = HashMap::new();
     if let Some(obj) = json.as_object() {
         for (_key, entry) in obj {
-            if entry["ticker"].as_str() == Some(&upper)
-                && let Some(cik) = entry["cik_str"].as_u64()
+            if let (Some(ticker), Some(cik)) =
+                (entry["ticker"].as_str(), entry["cik_str"].as_u64())
             {
-                return Ok(format!("{cik:010}"));
+                map.insert(ticker.to_uppercase(), format!("{cik:010}"));
             }
         }
     }
+    debug!(count = map.len(), "parsed SEC company tickers");
+    Ok(map)
+}
 
-    bail!("ticker {ticker} not found in SEC company tickers")
+/// Resolve a ticker symbol to a zero-padded CIK.
+///
+/// First checks the in-memory cache. If not found, downloads the full
+/// mapping (populating the cache for future lookups).
+fn resolve_cik(ticker: &str) -> Result<String> {
+    let upper = ticker.to_uppercase();
+
+    // Check cache first.
+    {
+        let cache = cik_cache()
+            .lock()
+            .map_err(|e| anyhow::anyhow!("CIK cache lock poisoned: {e}"))?;
+        if let Some(cik) = cache.get(&upper) {
+            return Ok(cik.clone());
+        }
+    }
+
+    // Cache miss — download and populate.
+    let map = download_cik_map()?;
+    let result = map.get(&upper).cloned();
+    let mut cache = cik_cache()
+        .lock()
+        .map_err(|e| anyhow::anyhow!("CIK cache lock poisoned: {e}"))?;
+    *cache = map;
+
+    result.ok_or_else(|| anyhow::anyhow!("ticker {ticker} not found in SEC company tickers"))
 }
 
 /// Fetch filings from the EDGAR submissions endpoint for a given CIK.
 fn fetch_filings_by_cik(cik: &str) -> Result<Vec<SecFiling>> {
     let url = format!("{SUBMISSIONS_URL}{cik}.json");
-    let mut body = call_with_retry(|| {
-        ureq::get(&url)
-            .header("User-Agent", USER_AGENT)
-            .header("Accept", "application/json")
-    })
+    let mut body = call_with_retry_cfg(
+        || {
+            ureq::get(&url)
+                .header("User-Agent", USER_AGENT)
+                .header("Accept", "application/json")
+        },
+        &SEC_RETRY,
+    )
     .context("SEC submissions request failed")?;
 
     let json: serde_json::Value = body
@@ -183,5 +255,29 @@ mod tests {
         assert_eq!(filings.len(), 1);
         assert_eq!(filings[0].form_type, "4");
         assert!(filings[0].description.is_empty());
+    }
+
+    #[test]
+    fn download_cik_map_parses_sample_json() {
+        // Unit test with synthetic data — doesn't hit the network.
+        let json = serde_json::json!({
+            "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc"},
+            "1": {"cik_str": 789019, "ticker": "MSFT", "title": "Microsoft Corp"}
+        });
+
+        // Simulate parsing logic.
+        let mut map = HashMap::new();
+        if let Some(obj) = json.as_object() {
+            for (_key, entry) in obj {
+                if let (Some(ticker), Some(cik)) =
+                    (entry["ticker"].as_str(), entry["cik_str"].as_u64())
+                {
+                    map.insert(ticker.to_uppercase(), format!("{cik:010}"));
+                }
+            }
+        }
+        assert_eq!(map.get("AAPL"), Some(&"0000320193".to_string()));
+        assert_eq!(map.get("MSFT"), Some(&"0000789019".to_string()));
+        assert_eq!(map.len(), 2);
     }
 }

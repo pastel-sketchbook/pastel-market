@@ -436,10 +436,16 @@ fn draw_sec_list(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect
 fn draw_sec_detail(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
     let filing = app.chart_sec_filings.get(app.chart_sec_selected);
 
+    let title = if app.chart_sec_content_loading {
+        " Filing Detail (loading...) "
+    } else {
+        " Filing Detail (o=open, j/k=scroll) "
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
-        .title(" Filing Detail ")
+        .title(title)
         .title_style(
             Style::default()
                 .fg(theme.accent)
@@ -447,24 +453,29 @@ fn draw_sec_detail(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
         )
         .style(Style::default().bg(theme.chart_bg));
 
-    let text = if let Some(f) = filing {
-        let form_label = match f.form_type.as_str() {
-            "10-K" => "Annual Report (10-K)",
-            "10-Q" => "Quarterly Report (10-Q)",
-            "8-K" => "Current Report (8-K)",
-            "4" => "Insider Transaction (Form 4)",
-            "S-1" => "Registration Statement (S-1)",
-            "DEF 14A" => "Proxy Statement (DEF 14A)",
-            other => other,
-        };
+    let text = if let Some(content) = &app.chart_sec_content {
+        // Show header + fetched content.
+        if let Some(f) = filing {
+            let form_label = form_type_label(&f.form_type);
+            format!(
+                "{} — {} — {}\n\n{}",
+                form_label, f.filed_date, f.accession, content
+            )
+        } else {
+            content.clone()
+        }
+    } else if app.chart_sec_content_loading {
+        "Fetching filing content...".to_string()
+    } else if let Some(f) = filing {
+        let form_label = form_type_label(&f.form_type);
         let desc = if f.description.is_empty() {
             String::new()
         } else {
             format!("\n\n{}", f.description)
         };
         format!(
-            "{}\n\nFiled: {}\nAccession: {}{}\n\n{}",
-            form_label, f.filed_date, f.accession, desc, f.link
+            "{}\n\nFiled: {}\nAccession: {}{}\n\nPress Enter to load content.\nPress o to open in browser.",
+            form_label, f.filed_date, f.accession, desc
         )
     } else {
         "No filing selected.".to_string()
@@ -473,8 +484,22 @@ fn draw_sec_detail(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
     let para = Paragraph::new(text)
         .block(block)
         .wrap(ratatui::widgets::Wrap { trim: true })
+        .scroll((u16::try_from(app.chart_sec_scroll).unwrap_or(u16::MAX), 0))
         .style(Style::default().fg(theme.fg).bg(theme.chart_bg));
     frame.render_widget(para, area);
+}
+
+/// Map a form type code to a human-readable label.
+fn form_type_label(form_type: &str) -> &str {
+    match form_type {
+        "10-K" => "Annual Report (10-K)",
+        "10-Q" => "Quarterly Report (10-Q)",
+        "8-K" => "Current Report (8-K)",
+        "4" => "Insider Transaction (Form 4)",
+        "S-1" => "Registration Statement (S-1)",
+        "DEF 14A" => "Proxy Statement (DEF 14A)",
+        other => other,
+    }
 }
 
 /// Render the actual line chart from `app.chart_data`.

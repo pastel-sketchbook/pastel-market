@@ -2,6 +2,7 @@
 //! with quality-control screening (Pastel Picker).
 
 use std::collections::HashMap;
+use std::process::Command;
 use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
@@ -176,6 +177,12 @@ pub struct App {
     pub chart_sec_filings: Vec<SecFiling>,
     pub chart_sec_selected: usize,
     pub chart_sec_detail_open: bool,
+    /// Fetched text content of the currently viewed filing.
+    pub chart_sec_content: Option<String>,
+    /// Whether the filing content is currently loading.
+    pub chart_sec_content_loading: bool,
+    /// Scroll offset (line) within the filing content panel.
+    pub chart_sec_scroll: usize,
     /// Horizontal split ratio (0.0–1.0) for detail panels (news summary, SEC detail).
     /// Represents the left panel's share. Draggable with mouse.
     pub chart_detail_split: f64,
@@ -304,20 +311,16 @@ impl App {
             chart_sec_filings: Vec::new(),
             chart_sec_selected: 0,
             chart_sec_detail_open: false,
+            chart_sec_content: None,
+            chart_sec_content_loading: false,
+            chart_sec_scroll: 0,
             chart_detail_split: 0.5,
             chart_detail_dragging: false,
-
-            // -- Theme --
             theme_index,
-
-            // -- Internal state --
             tick: 0,
             ticks_since_refresh: 0,
             pending_g: false,
-            top_movers: TopMovers {
-                gainers: Vec::new(),
-                losers: Vec::new(),
-            },
+            top_movers: TopMovers { gainers: Vec::new(), losers: Vec::new() },
             loading: false,
             alert_fired: false,
             skip_persist: false,
@@ -376,6 +379,9 @@ impl App {
             chart_sec_filings: Vec::new(),
             chart_sec_selected: 0,
             chart_sec_detail_open: false,
+            chart_sec_content: None,
+            chart_sec_content_loading: false,
+            chart_sec_scroll: 0,
             chart_detail_split: 0.5,
             chart_detail_dragging: false,
             theme_index: 0,
@@ -755,29 +761,14 @@ impl App {
                 FetchResult::SparklineAll { sparklines } => {
                     self.sparkline_cache.extend(sparklines);
                 }
-                FetchResult::Chart {
-                    symbol,
-                    range,
-                    points,
-                } => {
-                    // Only apply if the chart is still open for this symbol+range.
-                    if self.chart_open && self.chart_symbol == symbol && self.chart_range == range {
-                        self.chart_data = points;
-                        self.chart_loading = false;
-                    }
-                }
                 FetchResult::News { items } => {
                     self.news_headlines = items;
                 }
-                FetchResult::StockNews { ticker, items } => {
-                    if self.chart_open && self.chart_symbol == ticker {
-                        self.chart_news = items;
-                    }
-                }
-                FetchResult::SecFilings { ticker, filings } => {
-                    if self.chart_open && self.chart_symbol == ticker {
-                        self.chart_sec_filings = filings;
-                    }
+                FetchResult::Chart { .. }
+                | FetchResult::StockNews { .. }
+                | FetchResult::SecFilings { .. }
+                | FetchResult::FilingContent { .. } => {
+                    self.drain_chart_result(result);
                 }
                 FetchResult::Scanner {
                     quotes,
@@ -824,6 +815,43 @@ impl App {
 
         // After processing results, check if conviction alert should fire.
         self.check_conviction_alert();
+    }
+
+    /// Handle chart overlay-specific fetch results.
+    fn drain_chart_result(&mut self, result: FetchResult) {
+        match result {
+            FetchResult::Chart {
+                symbol,
+                range,
+                points,
+            } if self.chart_open && self.chart_symbol == symbol && self.chart_range == range => {
+                self.chart_data = points;
+                self.chart_loading = false;
+            }
+            FetchResult::StockNews { ticker, items }
+                if self.chart_open && self.chart_symbol == ticker =>
+            {
+                self.chart_news = items;
+            }
+            FetchResult::SecFilings { ticker, filings }
+                if self.chart_open && self.chart_symbol == ticker =>
+            {
+                self.chart_sec_filings = filings;
+            }
+            FetchResult::FilingContent { url, content }
+                if self.chart_open
+                    && self.chart_sec_detail_open
+                    && self
+                        .chart_sec_filings
+                        .get(self.chart_sec_selected)
+                        .is_some_and(|f| f.link == url) =>
+            {
+                self.chart_sec_content = Some(content);
+                self.chart_sec_content_loading = false;
+                self.chart_sec_scroll = 0;
+            }
+            _ => {}
+        }
     }
 
     /// Called every UI tick (250ms).
@@ -1151,6 +1179,9 @@ impl App {
         self.chart_sec_filings.clear();
         self.chart_sec_selected = 0;
         self.chart_sec_detail_open = false;
+        self.chart_sec_content = None;
+        self.chart_sec_content_loading = false;
+        self.chart_sec_scroll = 0;
         self.chart_detail_split = 0.5;
         self.chart_detail_dragging = false;
 
@@ -1264,30 +1295,72 @@ impl App {
                 }
             }
 
-            // Navigation in SEC Filings panel.
+            // SEC Filings panel keys delegated to sub-handler.
+            _ if self.chart_tab == ChartTab::SecFilings => {
+                self.handle_chart_sec_key(key);
+            }
+
+            KeyCode::Char('t') => self.next_theme(),
+            _ => {}
+        }
+    }
+
+    /// Handle keys specific to the SEC Filings chart tab.
+    fn handle_chart_sec_key(&mut self, key: KeyEvent) {
+        match key.code {
+            // Scroll filing content when detail panel is open.
             KeyCode::Down | KeyCode::Char('j')
-                if self.chart_tab == ChartTab::SecFilings
-                    && !self.chart_sec_filings.is_empty() =>
+                if self.chart_sec_detail_open && self.chart_sec_content.is_some() =>
             {
+                self.chart_sec_scroll = self.chart_sec_scroll.saturating_add(1);
+            }
+            KeyCode::Up | KeyCode::Char('k')
+                if self.chart_sec_detail_open && self.chart_sec_content.is_some() =>
+            {
+                self.chart_sec_scroll = self.chart_sec_scroll.saturating_sub(1);
+            }
+
+            // Navigate filings list (detail closed).
+            KeyCode::Down | KeyCode::Char('j') if !self.chart_sec_filings.is_empty() => {
                 self.chart_sec_selected =
                     (self.chart_sec_selected + 1) % self.chart_sec_filings.len();
                 self.chart_sec_detail_open = false;
+                self.chart_sec_content = None;
+                self.chart_sec_scroll = 0;
             }
-            KeyCode::Up | KeyCode::Char('k')
-                if self.chart_tab == ChartTab::SecFilings
-                    && !self.chart_sec_filings.is_empty() =>
-            {
+            KeyCode::Up | KeyCode::Char('k') if !self.chart_sec_filings.is_empty() => {
                 self.chart_sec_selected = self
                     .chart_sec_selected
                     .checked_sub(1)
                     .unwrap_or(self.chart_sec_filings.len().saturating_sub(1));
                 self.chart_sec_detail_open = false;
+                self.chart_sec_content = None;
+                self.chart_sec_scroll = 0;
             }
-            KeyCode::Enter | KeyCode::Char(' ')
-                if self.chart_tab == ChartTab::SecFilings
-                    && !self.chart_sec_filings.is_empty() =>
-            {
-                self.chart_sec_detail_open = !self.chart_sec_detail_open;
+            KeyCode::Enter | KeyCode::Char(' ') if !self.chart_sec_filings.is_empty() => {
+                if self.chart_sec_detail_open {
+                    self.chart_sec_detail_open = false;
+                    self.chart_sec_content = None;
+                    self.chart_sec_scroll = 0;
+                } else {
+                    self.chart_sec_detail_open = true;
+                    self.chart_sec_content = None;
+                    self.chart_sec_content_loading = true;
+                    self.chart_sec_scroll = 0;
+                    // Trigger background fetch of filing content.
+                    if let Some(filing) = self.chart_sec_filings.get(self.chart_sec_selected)
+                        && let Some(worker) = &self.worker
+                    {
+                        worker.submit_filing_content(filing.link.clone());
+                    }
+                }
+            }
+
+            // Open selected filing in system browser.
+            KeyCode::Char('o') if !self.chart_sec_filings.is_empty() => {
+                if let Some(filing) = self.chart_sec_filings.get(self.chart_sec_selected) {
+                    let _ = open_in_browser(&filing.link);
+                }
             }
 
             KeyCode::Char('t') => self.next_theme(),
@@ -1574,6 +1647,23 @@ fn fallback_mock_data() -> MockData {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+/// Open a URL in the system default browser.
+fn open_in_browser(url: &str) -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg(url).spawn()?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open").arg(url).spawn()?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd").args(["/C", "start", url]).spawn()?;
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

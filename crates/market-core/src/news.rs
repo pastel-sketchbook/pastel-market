@@ -294,14 +294,14 @@ mod tests {
             "<link>https://news.google.com/articles/abc123</link>",
             "<source url=\"https://reuters.com\">Reuters</source>",
             "<description>iPhone demand surges in holiday quarter</description>",
-            "<pubDate>Thu, 24 Apr 2026 14:30:00 GMT</pubDate>",
+            "<pubDate>Fri, 24 Apr 2026 14:30:00 GMT</pubDate>",
             "</item>",
             "<item>",
             "<title>Apple stock hits all-time high</title>",
             "<link>https://news.google.com/articles/def456</link>",
             "<source url=\"https://marketwatch.com\">MarketWatch</source>",
             "<description>Shares climb 3% after strong guidance</description>",
-            "<pubDate>Thu, 24 Apr 2026 12:00:00 GMT</pubDate>",
+            "<pubDate>Fri, 24 Apr 2026 12:00:00 GMT</pubDate>",
             "</item>",
             "<item>",
             "<title></title>",
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn parse_rfc2822_valid() {
-        let ts = parse_rfc2822_to_epoch("Thu, 24 Apr 2026 14:30:00 GMT");
+        let ts = parse_rfc2822_to_epoch("Fri, 24 Apr 2026 14:30:00 GMT");
         assert!(ts.is_some());
     }
 

@@ -160,6 +160,142 @@ fn parse_submissions(json: &serde_json::Value, cik: &str) -> Result<Vec<SecFilin
     Ok(filings)
 }
 
+// ---------------------------------------------------------------------------
+// Filing content fetch
+// ---------------------------------------------------------------------------
+
+/// Maximum body size for filing content (500 KB).
+/// Many 10-K filings are multi-MB; we truncate to keep the TUI responsive.
+const MAX_FILING_BYTES: u64 = 512_000;
+
+/// Fetch a filing document and extract readable text.
+///
+/// Downloads the HTML/XML from `url`, strips tags and excess whitespace,
+/// and returns plain text suitable for display in a terminal panel.
+/// The response is capped at [`MAX_FILING_BYTES`] to avoid downloading
+/// enormous filings.
+///
+/// # Errors
+///
+/// Returns an error if the document cannot be fetched or read.
+pub fn fetch_filing_content(url: &str) -> Result<String> {
+    let mut body = sec_agent()
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "text/html, application/xhtml+xml, text/xml")
+        .call()
+        .with_context(|| format!("failed to fetch filing from {url}"))?
+        .into_body();
+
+    let buf = body
+        .with_config()
+        .limit(MAX_FILING_BYTES)
+        .read_to_vec()
+        .context("failed to read filing body")?;
+
+    let html = String::from_utf8_lossy(&buf);
+    let text = strip_html_to_text(&html);
+    debug!(url, chars = text.len(), "fetched filing content");
+    Ok(text)
+}
+
+/// Strip HTML/XML tags and decode common entities to produce readable text.
+fn strip_html_to_text(html: &str) -> String {
+    let mut out = String::with_capacity(html.len() / 3);
+    let mut in_tag = false;
+    let mut last_was_space = true;
+
+    let mut chars = html.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '<' => {
+                in_tag = true;
+                // Insert newline for block elements.
+                if !last_was_space {
+                    // Peek to detect block tags (p, div, tr, br, h1-h6, li).
+                    let rest: String = chars.clone().take(4).collect();
+                    let tag = rest.to_lowercase();
+                    if tag.starts_with("br")
+                        || tag.starts_with("p ")
+                        || tag.starts_with("p>")
+                        || tag.starts_with("/p")
+                        || tag.starts_with("/d")
+                        || tag.starts_with("/t")
+                        || tag.starts_with("tr")
+                        || tag.starts_with("li")
+                        || tag.starts_with("h1")
+                        || tag.starts_with("h2")
+                        || tag.starts_with("h3")
+                        || tag.starts_with("h4")
+                        || tag.starts_with("h5")
+                        || tag.starts_with("h6")
+                    {
+                        out.push('\n');
+                        last_was_space = true;
+                    }
+                }
+            }
+            '>' if in_tag => {
+                in_tag = false;
+            }
+            '&' if !in_tag => {
+                // Decode common HTML entities.
+                let entity: String = chars
+                    .by_ref()
+                    .take_while(|&ch| ch != ';')
+                    .collect();
+                match entity.as_str() {
+                    "amp" => out.push('&'),
+                    "lt" => out.push('<'),
+                    "gt" => out.push('>'),
+                    "quot" => out.push('"'),
+                    "apos" => out.push('\''),
+                    "nbsp" | "#160" => out.push(' '),
+                    "#8212" | "mdash" => out.push('—'),
+                    "#8211" | "ndash" => out.push('–'),
+                    "#8217" | "rsquo" => out.push('\u{2019}'),
+                    "#8220" | "ldquo" => out.push('\u{201C}'),
+                    "#8221" | "rdquo" => out.push('\u{201D}'),
+                    _ => {
+                        // Unknown entity — skip it.
+                    }
+                }
+                last_was_space = false;
+            }
+            _ if !in_tag => {
+                if c.is_whitespace() {
+                    if !last_was_space {
+                        out.push(' ');
+                        last_was_space = true;
+                    }
+                } else {
+                    out.push(c);
+                    last_was_space = false;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Collapse multiple blank lines.
+    let mut result = String::with_capacity(out.len());
+    let mut blank_count = 0;
+    for line in out.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            blank_count += 1;
+            if blank_count <= 1 {
+                result.push('\n');
+            }
+        } else {
+            blank_count = 0;
+            result.push_str(trimmed);
+            result.push('\n');
+        }
+    }
+    result.trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +370,30 @@ mod tests {
         assert_eq!(filings.len(), 1);
         assert_eq!(filings[0].form_type, "4");
         assert!(filings[0].description.is_empty());
+    }
+
+    #[test]
+    fn strip_html_basic() {
+        let html = "<html><body><p>Hello <b>world</b>!</p><p>Second paragraph.</p></body></html>";
+        let text = strip_html_to_text(html);
+        assert!(text.contains("Hello world!"));
+        assert!(text.contains("Second paragraph."));
+    }
+
+    #[test]
+    fn strip_html_entities() {
+        let html = "AT&amp;T &lt;corp&gt; &quot;test&quot;";
+        let text = strip_html_to_text(html);
+        assert_eq!(text, "AT&T <corp> \"test\"");
+    }
+
+    #[test]
+    fn strip_html_collapses_whitespace() {
+        let html = "<div>  lots   of   spaces  </div><div></div><div></div><div>after gap</div>";
+        let text = strip_html_to_text(html);
+        // Multiple blank lines collapsed to at most one.
+        assert!(!text.contains("\n\n\n"));
+        assert!(text.contains("lots of spaces"));
+        assert!(text.contains("after gap"));
     }
 }

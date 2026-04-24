@@ -52,6 +52,11 @@ pub enum FetchResult {
         ticker: String,
         filings: Vec<SecFiling>,
     },
+    /// Fetched text content of a single SEC filing document.
+    FilingContent {
+        url: String,
+        content: String,
+    },
     /// Scanner quotes (Yahoo screener or trending).
     Scanner {
         quotes: Vec<Quote>,
@@ -298,6 +303,27 @@ impl Worker {
                     FetchResult::SecFilings {
                         ticker,
                         filings: Vec::new(),
+                    }
+                }
+            };
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Fetch the text content of a single SEC filing document.
+    pub fn submit_filing_content(&self, url: String) {
+        let tx = self.tx.clone();
+        thread::spawn(move || {
+            let result = match market_core::sec::fetch_filing_content(&url) {
+                Ok(content) => FetchResult::FilingContent {
+                    url,
+                    content,
+                },
+                Err(e) => {
+                    tracing::warn!(error = %e, "filing content fetch failed");
+                    FetchResult::FilingContent {
+                        url,
+                        content: format!("Failed to load filing: {e}"),
                     }
                 }
             };

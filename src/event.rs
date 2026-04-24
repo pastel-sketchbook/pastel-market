@@ -82,9 +82,7 @@ impl EventHandler {
 
                 if source.poll(timeout) {
                     match source.read() {
-                        Some(CrosstermEvent::Key(key))
-                            if tx.send(Event::Key(key)).is_err() =>
-                        {
+                        Some(CrosstermEvent::Key(key)) if tx.send(Event::Key(key)).is_err() => {
                             return;
                         }
                         Some(CrosstermEvent::Resize(w, h))
@@ -92,9 +90,7 @@ impl EventHandler {
                         {
                             return;
                         }
-                        Some(CrosstermEvent::Mouse(m))
-                            if tx.send(Event::Mouse(m)).is_err() =>
-                        {
+                        Some(CrosstermEvent::Mouse(m)) if tx.send(Event::Mouse(m)).is_err() => {
                             return;
                         }
                         _ => {}

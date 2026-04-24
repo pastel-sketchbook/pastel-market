@@ -281,6 +281,8 @@ mod tests {
             sort_mode: "Change% \u{2193}".into(),
             filter_mode: "Gainers".into(),
             view_mode: "Scanner".into(),
+            watchlist_tabs: Vec::new(),
+            active_tab: 0,
         };
         let json = serde_json::to_string_pretty(&session).expect("serialize");
         let parsed: Session = serde_json::from_str(&json).expect("deserialize");

@@ -66,10 +66,8 @@ pub fn build_quote_row<'a>(
             },
         );
 
-        let spark_str = sparkline_points.map_or_else(
-            || " ".repeat(8),
-            |pts| mini_sparkline(pts, 8),
-        );
+        let spark_str =
+            sparkline_points.map_or_else(|| " ".repeat(8), |pts| mini_sparkline(pts, 8));
         let spark_color = if q.is_gain() { theme.gain } else { theme.loss };
 
         Row::new(vec![
@@ -182,7 +180,9 @@ pub fn draw_watchlist_table(frame: &mut Frame, app: &App, theme: &Theme, area: R
                 .border_style(Style::default().fg(theme.border))
                 .title(format!(
                     " Watchlist: {} [{}/{}]{sort_label}{filter_label} ",
-                    app.watchlist_tabs.get(app.active_tab).map_or("Main", |(n, _)| n),
+                    app.watchlist_tabs
+                        .get(app.active_tab)
+                        .map_or("Main", |(n, _)| n),
                     app.active_tab + 1,
                     app.watchlist_tabs.len(),
                 ))

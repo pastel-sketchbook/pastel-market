@@ -430,11 +430,7 @@ impl fmt::Display for SortMode {
 
 /// Sort and filter a flat list of quotes, returning indices into the original slice.
 #[must_use]
-pub fn sorted_filtered_indices(
-    quotes: &[Quote],
-    sort: SortMode,
-    filter: FilterMode,
-) -> Vec<usize> {
+pub fn sorted_filtered_indices(quotes: &[Quote], sort: SortMode, filter: FilterMode) -> Vec<usize> {
     let mut indices: Vec<usize> = (0..quotes.len())
         .filter(|&i| filter.matches(&quotes[i]))
         .collect();
@@ -460,7 +456,11 @@ pub fn sorted_filtered_indices(
                 .unwrap_or(std::cmp::Ordering::Equal)
         }),
         SortMode::VolumeDesc => {
-            indices.sort_by(|&a, &b| quotes[b].regular_market_volume.cmp(&quotes[a].regular_market_volume));
+            indices.sort_by(|&a, &b| {
+                quotes[b]
+                    .regular_market_volume
+                    .cmp(&quotes[a].regular_market_volume)
+            });
         }
         SortMode::Symbol => {
             indices.sort_by(|&a, &b| quotes[a].symbol.cmp(&quotes[b].symbol));
@@ -859,6 +859,12 @@ mod tests {
             regular_market_day_low: price - 1.0,
             fifty_two_week_high: price + 50.0,
             fifty_two_week_low: price - 50.0,
+            pre_market_price: None,
+            pre_market_change: None,
+            pre_market_change_percent: None,
+            post_market_price: None,
+            post_market_change: None,
+            post_market_change_percent: None,
         }
     }
 

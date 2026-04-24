@@ -958,15 +958,11 @@ impl App {
 
             // Watchlist tab switching (Watchlist view only)
             KeyCode::Char(']') if self.view_mode == ViewMode::Watchlist => {
-                self.switch_watchlist_tab(
-                    (self.active_tab + 1) % self.watchlist_tabs.len().max(1),
-                );
+                self.switch_watchlist_tab((self.active_tab + 1) % self.watchlist_tabs.len().max(1));
             }
             KeyCode::Char('[') if self.view_mode == ViewMode::Watchlist => {
                 let len = self.watchlist_tabs.len().max(1);
-                self.switch_watchlist_tab(
-                    self.active_tab.checked_sub(1).unwrap_or(len - 1),
-                );
+                self.switch_watchlist_tab(self.active_tab.checked_sub(1).unwrap_or(len - 1));
             }
 
             _ => {}
@@ -1112,8 +1108,7 @@ impl App {
         match self.view_mode {
             ViewMode::Scanner => {
                 if !self.scanner_quotes.is_empty() {
-                    self.scanner_selected =
-                        (self.scanner_selected + 1) % self.scanner_quotes.len();
+                    self.scanner_selected = (self.scanner_selected + 1) % self.scanner_quotes.len();
                 }
             }
             _ => self.watchlist.select_next(),

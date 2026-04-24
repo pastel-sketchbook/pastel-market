@@ -32,7 +32,11 @@ fn main() -> Result<()> {
     // Terminal setup.
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, crossterm::event::EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        crossterm::event::EnableMouseCapture
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 

@@ -201,10 +201,7 @@ impl Worker {
                             })
                         })
                         .collect();
-                    handles
-                        .into_iter()
-                        .filter_map(|h| h.join().ok())
-                        .collect()
+                    handles.into_iter().filter_map(|h| h.join().ok()).collect()
                 });
                 for (sym, pts) in results {
                     if !pts.is_empty() {

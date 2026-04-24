@@ -272,7 +272,7 @@ fn draw_grid_lines(
         return;
     }
     let v_line = GridLine {
-        x_start: graph_top,  // reuse fields: x_start=top, x_end=bottom for vertical
+        x_start: graph_top, // reuse fields: x_start=top, x_end=bottom for vertical
         x_end: graph_bottom,
         y: 0,
         style,
@@ -312,7 +312,11 @@ fn build_x_labels(
     let len = points.len();
     (0..count)
         .map(|i| {
-            let idx = if i == segments { len - 1 } else { i * len / segments };
+            let idx = if i == segments {
+                len - 1
+            } else {
+                i * len / segments
+            };
             let label = points
                 .get(idx)
                 .and_then(|p| p.timestamp)

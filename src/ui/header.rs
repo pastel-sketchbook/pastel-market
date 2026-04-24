@@ -119,9 +119,7 @@ fn market_clock_spans(status: MarketStatus, theme: &Theme) -> Vec<Span<'static>>
 
     let mut spans = vec![Span::styled(
         format!("ET {hm}"),
-        Style::default()
-            .fg(theme.fg)
-            .add_modifier(Modifier::DIM),
+        Style::default().fg(theme.fg).add_modifier(Modifier::DIM),
     )];
 
     // Show time-to-close only when market is open (closes at 16:00 ET).

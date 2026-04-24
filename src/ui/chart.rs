@@ -17,6 +17,22 @@ use market_core::theme::Theme;
 
 use crate::app::{App, ChartTab};
 
+/// Split an area into two horizontal columns using a 0.0–1.0 ratio.
+/// Returns `(left, right)` rects. Ratio is clamped to 20–80%.
+fn split_detail_cols(ratio: f64, area: Rect) -> (Rect, Rect) {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let left_w = (ratio * f64::from(area.width)).round() as u16;
+    let left_w = left_w.clamp(1, area.width.saturating_sub(1));
+    let left = Rect::new(area.x, area.y, left_w, area.height);
+    let right = Rect::new(
+        area.x + left_w,
+        area.y,
+        area.width.saturating_sub(left_w),
+        area.height,
+    );
+    (left, right)
+}
+
 /// Draw the chart overlay centered on the screen.
 pub fn draw_chart_overlay(frame: &mut Frame, app: &App, theme: &'static Theme) {
     let area = frame.area();
@@ -220,12 +236,9 @@ fn draw_news_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
 
     // If summary is open, split: list on left, summary on right.
     if app.chart_news_summary_open {
-        let cols = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(area);
-        draw_news_list(frame, app, theme, cols[0]);
-        draw_news_summary(frame, app, theme, cols[1]);
+        let (left, right) = split_detail_cols(app.chart_detail_split, area);
+        draw_news_list(frame, app, theme, left);
+        draw_news_summary(frame, app, theme, right);
     } else {
         draw_news_list(frame, app, theme, area);
     }
@@ -344,6 +357,22 @@ fn draw_sec_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rec
         return;
     }
 
+    // If detail is open, split horizontally: list | detail.
+    if app.chart_sec_detail_open {
+        let (left, right) = split_detail_cols(app.chart_detail_split, area);
+        draw_sec_list(frame, app, theme, left);
+        draw_sec_detail(frame, app, theme, right);
+    } else {
+        draw_sec_list(frame, app, theme, area);
+    }
+}
+
+/// Draw the SEC filings list (left side when detail is open).
+fn draw_sec_list(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
+    let title_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+
     let items: Vec<ListItem> = app
         .chart_sec_filings
         .iter()
@@ -401,6 +430,51 @@ fn draw_sec_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rec
 
     let list = List::new(items).block(block);
     frame.render_widget(list, area);
+}
+
+/// Draw the SEC filing detail panel (right side).
+fn draw_sec_detail(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
+    let filing = app.chart_sec_filings.get(app.chart_sec_selected);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent))
+        .title(" Filing Detail ")
+        .title_style(
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(theme.chart_bg));
+
+    let text = if let Some(f) = filing {
+        let form_label = match f.form_type.as_str() {
+            "10-K" => "Annual Report (10-K)",
+            "10-Q" => "Quarterly Report (10-Q)",
+            "8-K" => "Current Report (8-K)",
+            "4" => "Insider Transaction (Form 4)",
+            "S-1" => "Registration Statement (S-1)",
+            "DEF 14A" => "Proxy Statement (DEF 14A)",
+            other => other,
+        };
+        let desc = if f.description.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{}", f.description)
+        };
+        format!(
+            "{}\n\nFiled: {}\nAccession: {}{}\n\n{}",
+            form_label, f.filed_date, f.accession, desc, f.link
+        )
+    } else {
+        "No filing selected.".to_string()
+    };
+
+    let para = Paragraph::new(text)
+        .block(block)
+        .wrap(ratatui::widgets::Wrap { trim: true })
+        .style(Style::default().fg(theme.fg).bg(theme.chart_bg));
+    frame.render_widget(para, area);
 }
 
 /// Render the actual line chart from `app.chart_data`.

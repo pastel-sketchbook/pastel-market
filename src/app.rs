@@ -175,6 +175,12 @@ pub struct App {
     pub chart_news_summary_open: bool,
     pub chart_sec_filings: Vec<SecFiling>,
     pub chart_sec_selected: usize,
+    pub chart_sec_detail_open: bool,
+    /// Horizontal split ratio (0.0–1.0) for detail panels (news summary, SEC detail).
+    /// Represents the left panel's share. Draggable with mouse.
+    pub chart_detail_split: f64,
+    /// Whether the user is actively dragging the split divider.
+    pub chart_detail_dragging: bool,
 
     // -- Theme --
     pub theme_index: usize,
@@ -297,6 +303,9 @@ impl App {
             chart_news_summary_open: false,
             chart_sec_filings: Vec::new(),
             chart_sec_selected: 0,
+            chart_sec_detail_open: false,
+            chart_detail_split: 0.5,
+            chart_detail_dragging: false,
 
             // -- Theme --
             theme_index,
@@ -366,6 +375,9 @@ impl App {
             chart_news_summary_open: false,
             chart_sec_filings: Vec::new(),
             chart_sec_selected: 0,
+            chart_sec_detail_open: false,
+            chart_detail_split: 0.5,
+            chart_detail_dragging: false,
             theme_index: 0,
             tick: 0,
             ticks_since_refresh: 0,
@@ -835,8 +847,36 @@ impl App {
 
     /// Dispatch a mouse event.
     pub fn handle_mouse(&mut self, mouse: MouseEvent) {
-        // Ignore mouse in overlays.
-        if self.chart_open || self.show_help {
+        // Handle drag resize in chart overlay detail panels.
+        if self.chart_open {
+            let detail_open = (self.chart_tab == ChartTab::News && self.chart_news_summary_open)
+                || (self.chart_tab == ChartTab::SecFilings && self.chart_sec_detail_open);
+            if detail_open {
+                match mouse.kind {
+                    MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                        self.chart_detail_dragging = true;
+                    }
+                    MouseEventKind::Drag(crossterm::event::MouseButton::Left)
+                        if self.chart_detail_dragging =>
+                    {
+                        // Compute split ratio from mouse column relative to terminal width.
+                        let col = f64::from(mouse.column);
+                        let width = f64::from(
+                            crossterm::terminal::size().map_or(80, |(w, _)| w).max(1),
+                        );
+                        let ratio = (col / width).clamp(0.2, 0.8);
+                        self.chart_detail_split = ratio;
+                    }
+                    MouseEventKind::Up(crossterm::event::MouseButton::Left) => {
+                        self.chart_detail_dragging = false;
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
+        // Ignore mouse in help overlay.
+        if self.show_help {
             return;
         }
         match mouse.kind {
@@ -1110,6 +1150,9 @@ impl App {
         self.chart_news_summary_open = false;
         self.chart_sec_filings.clear();
         self.chart_sec_selected = 0;
+        self.chart_sec_detail_open = false;
+        self.chart_detail_split = 0.5;
+        self.chart_detail_dragging = false;
 
         if let Some(worker) = &self.worker {
             worker.submit_chart(sym.clone(), self.chart_range);
@@ -1128,6 +1171,20 @@ impl App {
     }
 
     /// Switch the chart to a different time range.
+    fn range_from_digit(c: char) -> Option<ChartRange> {
+        match c {
+            '1' => Some(ChartRange::Day1),
+            '2' => Some(ChartRange::Day5),
+            '3' => Some(ChartRange::Month1),
+            '4' => Some(ChartRange::Month3),
+            '5' => Some(ChartRange::Month6),
+            '6' => Some(ChartRange::Ytd),
+            '7' => Some(ChartRange::Year1),
+            '8' => Some(ChartRange::Year5),
+            _ => None,
+        }
+    }
+
     fn switch_chart_range(&mut self, range: ChartRange) {
         if range == self.chart_range {
             return;
@@ -1146,6 +1203,8 @@ impl App {
             KeyCode::Esc | KeyCode::Char('q') => {
                 if self.chart_news_summary_open {
                     self.chart_news_summary_open = false;
+                } else if self.chart_sec_detail_open {
+                    self.chart_sec_detail_open = false;
                 } else {
                     self.close_chart();
                 }
@@ -1166,29 +1225,10 @@ impl App {
             KeyCode::Left | KeyCode::Char('h') if self.chart_tab == ChartTab::Chart => {
                 self.switch_chart_range(self.chart_range.prev());
             }
-            KeyCode::Char('1') if self.chart_tab == ChartTab::Chart => {
-                self.switch_chart_range(ChartRange::Day1);
-            }
-            KeyCode::Char('2') if self.chart_tab == ChartTab::Chart => {
-                self.switch_chart_range(ChartRange::Day5);
-            }
-            KeyCode::Char('3') if self.chart_tab == ChartTab::Chart => {
-                self.switch_chart_range(ChartRange::Month1);
-            }
-            KeyCode::Char('4') if self.chart_tab == ChartTab::Chart => {
-                self.switch_chart_range(ChartRange::Month3);
-            }
-            KeyCode::Char('5') if self.chart_tab == ChartTab::Chart => {
-                self.switch_chart_range(ChartRange::Month6);
-            }
-            KeyCode::Char('6') if self.chart_tab == ChartTab::Chart => {
-                self.switch_chart_range(ChartRange::Ytd);
-            }
-            KeyCode::Char('7') if self.chart_tab == ChartTab::Chart => {
-                self.switch_chart_range(ChartRange::Year1);
-            }
-            KeyCode::Char('8') if self.chart_tab == ChartTab::Chart => {
-                self.switch_chart_range(ChartRange::Year5);
+            KeyCode::Char(c @ '1'..='8') if self.chart_tab == ChartTab::Chart => {
+                if let Some(r) = Self::range_from_digit(c) {
+                    self.switch_chart_range(r);
+                }
             }
 
             // Navigation in News panel.
@@ -1231,6 +1271,7 @@ impl App {
             {
                 self.chart_sec_selected =
                     (self.chart_sec_selected + 1) % self.chart_sec_filings.len();
+                self.chart_sec_detail_open = false;
             }
             KeyCode::Up | KeyCode::Char('k')
                 if self.chart_tab == ChartTab::SecFilings
@@ -1240,6 +1281,13 @@ impl App {
                     .chart_sec_selected
                     .checked_sub(1)
                     .unwrap_or(self.chart_sec_filings.len().saturating_sub(1));
+                self.chart_sec_detail_open = false;
+            }
+            KeyCode::Enter | KeyCode::Char(' ')
+                if self.chart_tab == ChartTab::SecFilings
+                    && !self.chart_sec_filings.is_empty() =>
+            {
+                self.chart_sec_detail_open = !self.chart_sec_detail_open;
             }
 
             KeyCode::Char('t') => self.next_theme(),

@@ -220,7 +220,7 @@ pub fn fetch_filing_content(url: &str) -> Result<String> {
 }
 
 /// Remove `<style>…</style>` and `<script>…</script>` blocks (case-insensitive).
-fn remove_skip_elements(html: &str) -> String {
+pub(crate) fn remove_skip_elements(html: &str) -> String {
     let lower = html.to_lowercase();
     let mut result = String::with_capacity(html.len());
     let mut pos = 0;
@@ -264,7 +264,7 @@ fn remove_skip_elements(html: &str) -> String {
 }
 
 /// Strip HTML/XML tags and decode common entities to produce readable text.
-fn strip_html_to_text(html: &str) -> String {
+pub(crate) fn strip_html_to_text(html: &str) -> String {
     // First, remove <style>...</style> and <script>...</script> blocks entirely
     // so their content never leaks as visible text.
     let cleaned = remove_skip_elements(html);

@@ -174,6 +174,12 @@ pub struct App {
     pub chart_news: Vec<NewsItem>,
     pub chart_news_selected: usize,
     pub chart_news_summary_open: bool,
+    /// Fetched text content of the currently viewed news article.
+    pub chart_news_content: Option<String>,
+    /// Whether the article content is currently loading.
+    pub chart_news_content_loading: bool,
+    /// Scroll offset (line) within the news content panel.
+    pub chart_news_scroll: usize,
     pub chart_sec_filings: Vec<SecFiling>,
     pub chart_sec_selected: usize,
     pub chart_sec_detail_open: bool,
@@ -215,6 +221,7 @@ impl App {
     /// watchlist exists, seeds the watchlist from Yahoo's day-gainers
     /// screener (top 20 performers).
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn new() -> Self {
         let prefs = config::load_preferences();
         let session = config::load_session();
@@ -308,6 +315,9 @@ impl App {
             chart_news: Vec::new(),
             chart_news_selected: 0,
             chart_news_summary_open: false,
+            chart_news_content: None,
+            chart_news_content_loading: false,
+            chart_news_scroll: 0,
             chart_sec_filings: Vec::new(),
             chart_sec_selected: 0,
             chart_sec_detail_open: false,
@@ -376,6 +386,9 @@ impl App {
             chart_news: Vec::new(),
             chart_news_selected: 0,
             chart_news_summary_open: false,
+            chart_news_content: None,
+            chart_news_content_loading: false,
+            chart_news_scroll: 0,
             chart_sec_filings: Vec::new(),
             chart_sec_selected: 0,
             chart_sec_detail_open: false,
@@ -767,7 +780,8 @@ impl App {
                 FetchResult::Chart { .. }
                 | FetchResult::StockNews { .. }
                 | FetchResult::SecFilings { .. }
-                | FetchResult::FilingContent { .. } => {
+                | FetchResult::FilingContent { .. }
+                | FetchResult::NewsContent { .. } => {
                     self.drain_chart_result(result);
                 }
                 FetchResult::Scanner {
@@ -849,6 +863,18 @@ impl App {
                 self.chart_sec_content = Some(content);
                 self.chart_sec_content_loading = false;
                 self.chart_sec_scroll = 0;
+            }
+            FetchResult::NewsContent { url, content }
+                if self.chart_open
+                    && self.chart_news_summary_open
+                    && self
+                        .chart_news
+                        .get(self.chart_news_selected)
+                        .is_some_and(|n| n.link == url) =>
+            {
+                self.chart_news_content = Some(content);
+                self.chart_news_content_loading = false;
+                self.chart_news_scroll = 0;
             }
             _ => {}
         }
@@ -1261,12 +1287,30 @@ impl App {
                 }
             }
 
-            // Navigation in News panel.
+            // Scroll news content when detail panel is open.
+            KeyCode::Down | KeyCode::Char('j')
+                if self.chart_tab == ChartTab::News
+                    && self.chart_news_summary_open
+                    && self.chart_news_content.is_some() =>
+            {
+                self.chart_news_scroll = self.chart_news_scroll.saturating_add(1);
+            }
+            KeyCode::Up | KeyCode::Char('k')
+                if self.chart_tab == ChartTab::News
+                    && self.chart_news_summary_open
+                    && self.chart_news_content.is_some() =>
+            {
+                self.chart_news_scroll = self.chart_news_scroll.saturating_sub(1);
+            }
+
+            // Navigate news list (detail closed).
             KeyCode::Down | KeyCode::Char('j')
                 if self.chart_tab == ChartTab::News && !self.chart_news.is_empty() =>
             {
                 self.chart_news_selected = (self.chart_news_selected + 1) % self.chart_news.len();
                 self.chart_news_summary_open = false;
+                self.chart_news_content = None;
+                self.chart_news_scroll = 0;
             }
             KeyCode::Up | KeyCode::Char('k')
                 if self.chart_tab == ChartTab::News && !self.chart_news.is_empty() =>
@@ -1276,19 +1320,26 @@ impl App {
                     .checked_sub(1)
                     .unwrap_or(self.chart_news.len().saturating_sub(1));
                 self.chart_news_summary_open = false;
+                self.chart_news_content = None;
+                self.chart_news_scroll = 0;
             }
-            KeyCode::Enter | KeyCode::Char(' ') if self.chart_tab == ChartTab::News => {
+            KeyCode::Enter | KeyCode::Char(' ')
+                if self.chart_tab == ChartTab::News && !self.chart_news.is_empty() =>
+            {
                 if self.chart_news_summary_open {
                     self.chart_news_summary_open = false;
+                    self.chart_news_content = None;
+                    self.chart_news_scroll = 0;
                 } else {
-                    // Only open if the selected item has a real summary.
-                    let has_summary = self
-                        .chart_news
-                        .get(self.chart_news_selected)
-                        .and_then(|item| item.summary.as_deref())
-                        .is_some_and(|s| !s.is_empty());
-                    if has_summary {
-                        self.chart_news_summary_open = true;
+                    self.chart_news_summary_open = true;
+                    self.chart_news_content = None;
+                    self.chart_news_content_loading = true;
+                    self.chart_news_scroll = 0;
+                    // Trigger background fetch of article content.
+                    if let Some(item) = self.chart_news.get(self.chart_news_selected)
+                        && let Some(worker) = &self.worker
+                    {
+                        worker.submit_article_content(item.link.clone());
                     }
                 }
             }
@@ -2408,16 +2459,20 @@ mod tests {
         assert_eq!(app.chart_news_selected, 1);
         app.handle_key(key(KeyCode::Char('k')));
         assert_eq!(app.chart_news_selected, 0);
-        // Enter toggles summary (item 0 has a summary).
+        // Enter opens article detail (triggers background fetch).
         app.handle_key(key(KeyCode::Enter));
         assert!(app.chart_news_summary_open);
+        assert!(app.chart_news_content_loading);
+        // Enter again closes it.
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.chart_news_summary_open);
-        // Navigate to item 1 (no summary) — Enter should NOT open.
+        // Navigate to item 1 (no RSS summary) — Enter still opens
+        // because we now fetch the full article page.
         app.handle_key(key(KeyCode::Char('j')));
         assert_eq!(app.chart_news_selected, 1);
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.chart_news_summary_open);
+        assert!(app.chart_news_summary_open);
+        assert!(app.chart_news_content_loading);
     }
 
     #[test]

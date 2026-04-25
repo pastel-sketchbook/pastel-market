@@ -47,7 +47,7 @@ headless_chrome = "1.0.21"
 
 [package]
 name = "pastel-market"
-version = "0.4.0"
+version = "0.4.1"
 edition.workspace = true
 rust-version.workspace = true
 

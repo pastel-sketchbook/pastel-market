@@ -54,6 +54,8 @@ pub enum FetchResult {
     },
     /// Fetched text content of a single SEC filing document.
     FilingContent { url: String, content: String },
+    /// Fetched text content of a news article page.
+    NewsContent { url: String, content: String },
     /// Scanner quotes (Yahoo screener or trending).
     Scanner {
         quotes: Vec<Quote>,
@@ -315,6 +317,24 @@ impl Worker {
                     FetchResult::FilingContent {
                         url,
                         content: format!("Failed to load filing: {e}"),
+                    }
+                }
+            };
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Fetch the text content of a news article page.
+    pub fn submit_article_content(&self, url: String) {
+        let tx = self.tx.clone();
+        thread::spawn(move || {
+            let result = match market_core::news::fetch_article_content(&url) {
+                Ok(content) => FetchResult::NewsContent { url, content },
+                Err(e) => {
+                    tracing::warn!(error = %e, "article content fetch failed");
+                    FetchResult::NewsContent {
+                        url,
+                        content: format!("Failed to load article: {e}"),
                     }
                 }
             };

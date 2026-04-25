@@ -219,13 +219,61 @@ pub fn fetch_filing_content(url: &str) -> Result<String> {
     Ok(text)
 }
 
+/// Remove `<style>…</style>` and `<script>…</script>` blocks (case-insensitive).
+fn remove_skip_elements(html: &str) -> String {
+    let lower = html.to_lowercase();
+    let mut result = String::with_capacity(html.len());
+    let mut pos = 0;
+
+    while pos < html.len() {
+        // Find the next <style or <script opening tag.
+        let next_style = lower[pos..].find("<style").map(|i| (i, "</style>"));
+        let next_script = lower[pos..].find("<script").map(|i| (i, "</script>"));
+
+        let next = match (next_style, next_script) {
+            (Some(a), Some(b)) => {
+                if a.0 <= b.0 {
+                    Some(a)
+                } else {
+                    Some(b)
+                }
+            }
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        };
+
+        if let Some((offset, close_tag)) = next {
+            // Append everything before this opening tag.
+            result.push_str(&html[pos..pos + offset]);
+            // Find the matching closing tag.
+            let after_open = pos + offset;
+            if let Some(end) = lower[after_open..].find(close_tag) {
+                pos = after_open + end + close_tag.len();
+            } else {
+                // Malformed: no closing tag — drop the rest.
+                break;
+            }
+        } else {
+            result.push_str(&html[pos..]);
+            break;
+        }
+    }
+
+    result
+}
+
 /// Strip HTML/XML tags and decode common entities to produce readable text.
 fn strip_html_to_text(html: &str) -> String {
-    let mut out = String::with_capacity(html.len() / 3);
+    // First, remove <style>...</style> and <script>...</script> blocks entirely
+    // so their content never leaks as visible text.
+    let cleaned = remove_skip_elements(html);
+
+    let mut out = String::with_capacity(cleaned.len() / 3);
     let mut in_tag = false;
     let mut last_was_space = true;
 
-    let mut chars = html.chars().peekable();
+    let mut chars = cleaned.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
             '<' => {
@@ -402,6 +450,17 @@ mod tests {
         let html = "AT&amp;T &lt;corp&gt; &quot;test&quot;";
         let text = strip_html_to_text(html);
         assert_eq!(text, "AT&T <corp> \"test\"");
+    }
+
+    #[test]
+    fn strip_html_removes_style_and_script_blocks() {
+        let html = "<html><head><style>.FormData {color: blue; background-color: white;}</style></head><body><p>Hello</p><script>var x=1;</script><p>World</p></body></html>";
+        let text = strip_html_to_text(html);
+        assert!(!text.contains("FormData"), "CSS class leaked: {text}");
+        assert!(!text.contains("color:"), "CSS property leaked: {text}");
+        assert!(!text.contains("var x"), "JS leaked: {text}");
+        assert!(text.contains("Hello"));
+        assert!(text.contains("World"));
     }
 
     #[test]

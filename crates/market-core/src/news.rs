@@ -11,6 +11,7 @@ use tracing::debug;
 
 use crate::domain::NewsItem;
 use crate::http::{RetryConfig, USER_AGENT, call_with_retry_cfg};
+use crate::sec::strip_html_to_text;
 
 /// Google News RSS search URL.
 const GOOGLE_NEWS_RSS: &str = "https://news.google.com/rss/search";
@@ -51,6 +52,44 @@ pub fn fetch_google_news(ticker: &str) -> Result<Vec<NewsItem>> {
     let items = parse_rss(&xml);
     debug!(ticker, count = items.len(), "parsed Google News RSS");
     Ok(items)
+}
+
+/// Maximum bytes to download when fetching an article page.
+const MAX_ARTICLE_BYTES: usize = 512_000;
+
+/// Fetch readable text from a news article URL.
+///
+/// Downloads the HTML page, strips style/script blocks and tags, and
+/// returns plain text suitable for display in a terminal panel. The
+/// response is capped at [`MAX_ARTICLE_BYTES`] to stay responsive.
+///
+/// # Errors
+///
+/// Returns an error if the page cannot be fetched or read.
+pub fn fetch_article_content(url: &str) -> Result<String> {
+    let mut body = call_with_retry_cfg(
+        || {
+            ureq::get(url)
+                .header("User-Agent", USER_AGENT)
+                .header("Accept", "text/html, */*")
+        },
+        &NEWS_RETRY,
+    )
+    .with_context(|| format!("failed to fetch article from {url}"))?;
+
+    let html = body
+        .read_to_string()
+        .context("failed to read article body")?;
+
+    let truncated = if html.len() > MAX_ARTICLE_BYTES {
+        &html[..html.floor_char_boundary(MAX_ARTICLE_BYTES)]
+    } else {
+        &html
+    };
+
+    let text = strip_html_to_text(truncated);
+    debug!(url, chars = text.len(), "fetched article content");
+    Ok(text)
 }
 
 /// Parse RSS XML into `NewsItem` list.

@@ -1,12 +1,14 @@
-//! Watchlist table rendering with heatmap, sorting, filtering, and rank badges.
+//! Watchlist table rendering with heatmap, sorting, filtering, rank badges, and ratings.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 
 use crate::app::App;
-use market_core::domain::{FilterMode, Quote, QuoteRank, SortMode, rank_by_change};
+use market_core::domain::{
+    FilterMode, Quote, QuoteRank, Rating, SortMode, rank_by_change,
+};
 use market_core::theme::Theme;
 
 use super::helpers::{
@@ -14,7 +16,7 @@ use super::helpers::{
 };
 
 /// Column widths shared between watchlist and scanner tables.
-pub const TABLE_WIDTHS: [Constraint; 8] = [
+pub const TABLE_WIDTHS: [Constraint; 9] = [
     Constraint::Length(8),
     Constraint::Min(14),
     Constraint::Length(14),
@@ -23,6 +25,7 @@ pub const TABLE_WIDTHS: [Constraint; 8] = [
     Constraint::Length(10),
     Constraint::Length(10),
     Constraint::Length(10),
+    Constraint::Length(7),
 ];
 
 /// Build the shared header row.
@@ -36,6 +39,7 @@ pub fn table_header(theme: &Theme) -> Row<'static> {
         Cell::from("Change%"),
         Cell::from("Volume"),
         Cell::from("Spark"),
+        Cell::from("Rating"),
     ])
     .style(
         Style::default()
@@ -51,6 +55,7 @@ pub fn build_quote_row<'a>(
     rank: Option<&QuoteRank>,
     theme: &Theme,
     sparkline_points: Option<&[market_core::domain::PricePoint]>,
+    rating: Option<Rating>,
 ) -> Row<'a> {
     if let Some(q) = quote {
         let change_style = rank.map_or_else(
@@ -70,6 +75,17 @@ pub fn build_quote_row<'a>(
             sparkline_points.map_or_else(|| " ".repeat(8), |pts| mini_sparkline(pts, 8));
         let spark_color = if q.is_gain() { theme.gain } else { theme.loss };
 
+        let rating_cell = if let Some(r) = rating {
+            let (cr, cg, cb) = r.color_rgb();
+            Cell::from(r.label().to_string()).style(
+                Style::default()
+                    .fg(Color::Rgb(cr, cg, cb))
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Cell::from("--").style(Style::default().fg(theme.muted))
+        };
+
         Row::new(vec![
             Cell::from(q.symbol.clone()),
             Cell::from(q.display_name().to_string()),
@@ -80,6 +96,7 @@ pub fn build_quote_row<'a>(
                 .style(change_style),
             Cell::from(format_volume(q.regular_market_volume)),
             Cell::from(spark_str).style(Style::default().fg(spark_color)),
+            rating_cell,
         ])
     } else {
         Row::new(vec![
@@ -91,6 +108,7 @@ pub fn build_quote_row<'a>(
             Cell::from("--"),
             Cell::from("--"),
             Cell::from(""),
+            Cell::from(""),
         ])
     }
 }
@@ -99,6 +117,7 @@ pub fn build_quote_row<'a>(
 pub fn empty_state_row(message: &str, theme: &Theme) -> Row<'static> {
     Row::new(vec![
         Cell::from(message.to_string()).style(Style::default().fg(theme.muted)),
+        Cell::from(""),
         Cell::from(""),
         Cell::from(""),
         Cell::from(""),
@@ -138,12 +157,14 @@ pub fn draw_watchlist_table(frame: &mut Frame, app: &App, theme: &Theme, area: R
             .map(|(row_idx, &i)| {
                 let sym = app.watchlist.symbols().get(i).map(String::as_str);
                 let spark = sym.and_then(|s| app.sparkline_cache.get(s).map(Vec::as_slice));
+                let rating = sym.map(|s| app.analyze_stock(s).rating);
                 let row = build_quote_row(
                     app.watchlist.quotes().get(i).and_then(Option::as_ref),
                     sym,
                     ranks.get(i).and_then(Option::as_ref),
                     theme,
                     spark,
+                    rating,
                 );
                 row.style(stripe_style(row_idx, theme))
             })

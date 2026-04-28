@@ -40,6 +40,7 @@ pub fn draw_scanner_table(frame: &mut Frame, app: &mut App, theme: &Theme, area:
                     ranks.get(orig_idx).and_then(Option::as_ref),
                     theme,
                     None,
+                    None, // No rating for scanner results
                 );
                 row.style(stripe_style(row_idx, theme))
             })

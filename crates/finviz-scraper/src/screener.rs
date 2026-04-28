@@ -144,6 +144,7 @@ pub fn parse_page(html: &str) -> Result<Vec<ScreenerResult>> {
             price: cells[8].clone(),
             change: cells[9].clone(),
             volume: cells[10].clone(),
+            beta: String::new(),
         });
     }
 
@@ -434,6 +435,7 @@ mod tests {
             price: "195.50".into(),
             change: "1.20%".into(),
             volume: "55,000,000".into(),
+            beta: "1.3".into(),
         };
         let q = screener_result_to_quote(&sr);
         assert_eq!(q.symbol, "AAPL");
@@ -455,6 +457,7 @@ mod tests {
             price: "420.00".into(),
             change: "-0.30%".into(),
             volume: "22,000,000".into(),
+            beta: "0.9".into(),
         };
         let q = screener_result_to_quote(&sr);
         assert!(q.regular_market_change < 0.0);

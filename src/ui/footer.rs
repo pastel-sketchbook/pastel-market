@@ -121,6 +121,9 @@ fn build_normal_footer<'a>(app: &App, theme: &'a Theme, sep: &Span<'a>) -> Vec<S
             s.push(key_badge("[/]", theme));
             s.push(muted_span(" Tab ", theme));
         }
+        ViewMode::Journal => {
+            // No additional context keys for journal view.
+        }
     }
 
     // Status message inline.

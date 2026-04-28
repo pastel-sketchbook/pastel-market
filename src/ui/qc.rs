@@ -252,6 +252,7 @@ pub fn draw_screener_table(frame: &mut Frame, app: &mut App, theme: &Theme, area
         Cell::from("PRICE"),
         Cell::from("CHANGE"),
         Cell::from("SCORE"),
+        Cell::from("RATING"),
         Cell::from("STATUS"),
     ])
     .style(
@@ -295,6 +296,16 @@ pub fn draw_screener_table(frame: &mut Frame, app: &mut App, theme: &Theme, area
                 Cell::from("PENDING").style(Style::default().fg(theme.muted))
             };
 
+            let report = app.analyze_stock(&r.ticker);
+            let rating_cell = {
+                let (cr, cg, cb) = report.rating.color_rgb();
+                Cell::from(report.rating.label().to_string()).style(
+                    Style::default()
+                        .fg(ratatui::style::Color::Rgb(cr, cg, cb))
+                        .add_modifier(Modifier::BOLD),
+                )
+            };
+
             Row::new(vec![
                 Cell::from(format!("{}", rank + 1)),
                 Cell::from(r.ticker.clone()),
@@ -304,6 +315,7 @@ pub fn draw_screener_table(frame: &mut Frame, app: &mut App, theme: &Theme, area
                 Cell::from(r.price.clone()),
                 Cell::from(r.change.clone()).style(Style::default().fg(change_color)),
                 Cell::from(format!("{score}/{total}")).style(score_style),
+                rating_cell,
                 status_cell,
             ])
             .style(stripe_style(rank, theme))
@@ -313,11 +325,12 @@ pub fn draw_screener_table(frame: &mut Frame, app: &mut App, theme: &Theme, area
     let widths = [
         Constraint::Length(4),
         Constraint::Percentage(10),
-        Constraint::Percentage(16),
+        Constraint::Percentage(14),
         Constraint::Percentage(10),
-        Constraint::Percentage(8),
+        Constraint::Percentage(6),
         Constraint::Percentage(10),
         Constraint::Percentage(10),
+        Constraint::Length(7),
         Constraint::Length(7),
         Constraint::Percentage(10),
     ];

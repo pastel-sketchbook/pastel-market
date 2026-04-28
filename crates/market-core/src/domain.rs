@@ -1,6 +1,6 @@
 use std::fmt;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Represents a real-time quote for a single stock symbol.
 #[derive(Debug, Clone, Deserialize)]
@@ -228,6 +228,12 @@ impl Watchlist {
     #[must_use]
     pub fn selected_quote(&self) -> Option<&Quote> {
         self.quotes.get(self.selected).and_then(Option::as_ref)
+    }
+
+    /// Returns the ticker string of the currently selected symbol, if any.
+    #[must_use]
+    pub fn selected_symbol(&self) -> Option<&str> {
+        self.symbols.get(self.selected).map(String::as_str)
     }
 
     /// Move selection down by one.
@@ -686,6 +692,8 @@ pub enum ViewMode {
     Scanner,
     /// Per-stock quality control checklist.
     QualityControl,
+    /// Persistent decision log and trade journal.
+    Journal,
 }
 
 impl ViewMode {
@@ -695,7 +703,8 @@ impl ViewMode {
         match self {
             Self::Watchlist => Self::Scanner,
             Self::Scanner => Self::QualityControl,
-            Self::QualityControl => Self::Watchlist,
+            Self::QualityControl => Self::Journal,
+            Self::Journal => Self::Watchlist,
         }
     }
 
@@ -703,9 +712,10 @@ impl ViewMode {
     #[must_use]
     pub fn prev(self) -> Self {
         match self {
-            Self::Watchlist => Self::QualityControl,
+            Self::Watchlist => Self::Journal,
             Self::Scanner => Self::Watchlist,
             Self::QualityControl => Self::Scanner,
+            Self::Journal => Self::QualityControl,
         }
     }
 }
@@ -715,7 +725,8 @@ impl fmt::Display for ViewMode {
         match self {
             Self::Watchlist => write!(f, "Watchlist"),
             Self::Scanner => write!(f, "Scanner"),
-            Self::QualityControl => write!(f, "Quality Control"),
+            Self::QualityControl => write!(f, "QC Screener"),
+            Self::Journal => write!(f, "Journal"),
         }
     }
 }
@@ -784,6 +795,80 @@ pub struct ScreenerResult {
     pub price: String,
     pub change: String,
     pub volume: String,
+    pub beta: String,
+}
+
+// ---------------------------------------------------------------------------
+// Rating
+// ---------------------------------------------------------------------------
+
+/// Five-tier stock rating derived from a composite analysis score (0–100).
+///
+/// Inspired by the `TradingAgents` portfolio-manager rating scale.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Rating {
+    /// Score 0–19: strong negative outlook.
+    Sell,
+    /// Score 20–39: weak/negative outlook.
+    Underweight,
+    /// Score 40–59: neutral.
+    Hold,
+    /// Score 60–79: positive outlook.
+    Buy,
+    /// Score 80–100: strong positive outlook.
+    StrongBuy,
+}
+
+impl Rating {
+    /// Derive a rating from a composite score (0–100, clamped).
+    #[must_use]
+    pub fn from_score(score: u8) -> Self {
+        match score.min(100) {
+            80..=100 => Self::StrongBuy,
+            60..=79 => Self::Buy,
+            40..=59 => Self::Hold,
+            20..=39 => Self::Underweight,
+            _ => Self::Sell,
+        }
+    }
+
+    /// Short label for compact display in table columns.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::StrongBuy => "S.BUY",
+            Self::Buy => "BUY",
+            Self::Hold => "HOLD",
+            Self::Underweight => "UNWT",
+            Self::Sell => "SELL",
+        }
+    }
+
+    /// Semantic color for this rating (returns an RGB tuple).
+    ///
+    /// Deep green → green → yellow → orange → red.
+    #[must_use]
+    pub fn color_rgb(self) -> (u8, u8, u8) {
+        match self {
+            Self::StrongBuy => (0, 200, 80),
+            Self::Buy => (100, 210, 100),
+            Self::Hold => (220, 200, 60),
+            Self::Underweight => (230, 140, 50),
+            Self::Sell => (240, 70, 70),
+        }
+    }
+}
+
+impl fmt::Display for Rating {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::StrongBuy => write!(f, "Strong Buy"),
+            Self::Buy => write!(f, "Buy"),
+            Self::Hold => write!(f, "Hold"),
+            Self::Underweight => write!(f, "Underweight"),
+            Self::Sell => write!(f, "Sell"),
+        }
+    }
 }
 
 /// Mock data types for offline/fallback mode.
@@ -1021,12 +1106,16 @@ mod tests {
         mode = mode.next();
         assert_eq!(mode, ViewMode::QualityControl);
         mode = mode.next();
+        assert_eq!(mode, ViewMode::Journal);
+        mode = mode.next();
         assert_eq!(mode, ViewMode::Watchlist);
     }
 
     #[test]
     fn view_mode_prev_cycles() {
         let mut mode = ViewMode::Watchlist;
+        mode = mode.prev();
+        assert_eq!(mode, ViewMode::Journal);
         mode = mode.prev();
         assert_eq!(mode, ViewMode::QualityControl);
         mode = mode.prev();
@@ -1105,5 +1194,64 @@ mod tests {
         assert_eq!(ChartRange::Day1.label(), "1D");
         assert_eq!(ChartRange::Ytd.label(), "YTD");
         assert_eq!(ChartRange::ALL.len(), 8);
+    }
+
+    // -- Rating ---------------------------------------------------------------
+
+    #[test]
+    fn rating_from_score_boundaries() {
+        assert_eq!(Rating::from_score(0), Rating::Sell);
+        assert_eq!(Rating::from_score(19), Rating::Sell);
+        assert_eq!(Rating::from_score(20), Rating::Underweight);
+        assert_eq!(Rating::from_score(39), Rating::Underweight);
+        assert_eq!(Rating::from_score(40), Rating::Hold);
+        assert_eq!(Rating::from_score(59), Rating::Hold);
+        assert_eq!(Rating::from_score(60), Rating::Buy);
+        assert_eq!(Rating::from_score(79), Rating::Buy);
+        assert_eq!(Rating::from_score(80), Rating::StrongBuy);
+        assert_eq!(Rating::from_score(100), Rating::StrongBuy);
+    }
+
+    #[test]
+    fn rating_from_score_clamps_above_100() {
+        assert_eq!(Rating::from_score(255), Rating::StrongBuy);
+    }
+
+    #[test]
+    fn rating_labels_are_compact() {
+        assert_eq!(Rating::StrongBuy.label(), "S.BUY");
+        assert_eq!(Rating::Buy.label(), "BUY");
+        assert_eq!(Rating::Hold.label(), "HOLD");
+        assert_eq!(Rating::Underweight.label(), "UNWT");
+        assert_eq!(Rating::Sell.label(), "SELL");
+    }
+
+    #[test]
+    fn rating_display_is_readable() {
+        assert_eq!(format!("{}", Rating::StrongBuy), "Strong Buy");
+        assert_eq!(format!("{}", Rating::Sell), "Sell");
+    }
+
+    #[test]
+    fn rating_color_rgb_returns_valid_tuples() {
+        for rating in [
+            Rating::StrongBuy,
+            Rating::Buy,
+            Rating::Hold,
+            Rating::Underweight,
+            Rating::Sell,
+        ] {
+            let (r, g, b) = rating.color_rgb();
+            // All channels should be valid u8 (always true, but confirms no panic).
+            assert!(r <= 255 && g <= 255 && b <= 255);
+        }
+    }
+
+    #[test]
+    fn rating_ord_sell_is_lowest() {
+        assert!(Rating::Sell < Rating::Underweight);
+        assert!(Rating::Underweight < Rating::Hold);
+        assert!(Rating::Hold < Rating::Buy);
+        assert!(Rating::Buy < Rating::StrongBuy);
     }
 }

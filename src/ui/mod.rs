@@ -6,7 +6,9 @@ mod footer;
 mod header;
 mod help;
 pub mod helpers;
+mod journal;
 mod qc;
+mod risk;
 mod scanner;
 mod watchlist;
 
@@ -48,6 +50,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     match app.view_mode {
         ViewMode::Watchlist | ViewMode::Scanner => draw_market_layout(frame, app),
         ViewMode::QualityControl => draw_qc_layout(frame, app),
+        ViewMode::Journal => draw_journal_layout(frame, app),
     }
 
     // Chart overlay on top of everything.
@@ -87,7 +90,9 @@ fn draw_market_layout(frame: &mut Frame, app: &mut App) {
         watchlist::draw_watchlist_table(frame, app, theme, chunks[2]);
     }
 
-    if app.show_news {
+    if app.show_risk {
+        risk::draw_risk_panel(frame, app, theme, chunks[3]);
+    } else if app.show_news {
         detail::draw_news_panel(frame, app, theme, chunks[3]);
     } else {
         detail::draw_top_movers(frame, app, theme, chunks[3]);
@@ -116,4 +121,23 @@ fn draw_qc_layout(frame: &mut Frame, app: &mut App) {
     qc::draw_qc_middle(frame, app, theme, chunks[1]);
     qc::draw_screener_table(frame, app, theme, chunks[2]);
     footer::draw_footer(frame, app, theme, chunks[3]);
+}
+
+/// Journal layout: header | journal table | footer.
+fn draw_journal_layout(frame: &mut Frame, app: &mut App) {
+    let theme = app.theme();
+    let area = frame.area();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // header
+            Constraint::Min(5),    // journal table
+            Constraint::Length(1), // footer
+        ])
+        .split(area);
+
+    header::draw_header(frame, app, theme, chunks[0]);
+    journal::draw_journal(frame, app, theme, chunks[1]);
+    footer::draw_footer(frame, app, theme, chunks[2]);
 }

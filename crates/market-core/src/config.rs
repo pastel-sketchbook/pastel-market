@@ -20,12 +20,53 @@ const APP_NAME: &str = "pastel-market";
 pub struct Preferences {
     /// Theme name (must match a name in `theme::THEMES`).
     pub theme: String,
+    /// Data vendor configuration.
+    #[serde(default)]
+    pub data_vendors: DataVendors,
+}
+
+/// Configurable data source selection.
+///
+/// Allows switching between Yahoo Finance, Alpha Vantage, or Finviz
+/// for different data types.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DataVendors {
+    /// Quote data source: "yahoo" or "alphavantage".
+    #[serde(default = "default_quotes_vendor")]
+    pub quotes: String,
+    /// Fundamental data source: "finviz" or "alphavantage".
+    #[serde(default = "default_fundamentals_vendor")]
+    pub fundamentals: String,
+    /// News data source: "yahoo" or "google".
+    #[serde(default = "default_news_vendor")]
+    pub news: String,
+}
+
+fn default_quotes_vendor() -> String {
+    "yahoo".to_string()
+}
+fn default_fundamentals_vendor() -> String {
+    "finviz".to_string()
+}
+fn default_news_vendor() -> String {
+    "yahoo".to_string()
+}
+
+impl Default for DataVendors {
+    fn default() -> Self {
+        Self {
+            quotes: default_quotes_vendor(),
+            fundamentals: default_fundamentals_vendor(),
+            news: default_news_vendor(),
+        }
+    }
 }
 
 impl Default for Preferences {
     fn default() -> Self {
         Self {
             theme: theme::THEMES[0].name.to_string(),
+            data_vendors: DataVendors::default(),
         }
     }
 }
@@ -135,6 +176,27 @@ pub fn session_path() -> Option<PathBuf> {
 pub fn qc_session_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", APP_NAME)
         .map(|dirs| dirs.data_dir().join("qc_session.json"))
+}
+
+/// Resolve the application data directory.
+///
+/// Returns the platform-specific data directory for pastel-market.
+#[must_use]
+pub fn app_dir() -> PathBuf {
+    directories::ProjectDirs::from("", "", APP_NAME).map_or_else(
+        || {
+            // Fallback to ~/.pastel-market if ProjectDirs fails (e.g. no HOME)
+            let mut home = dirs_fallback();
+            home.push(".pastel-market");
+            home
+        },
+        |dirs| dirs.data_dir().to_path_buf(),
+    )
+}
+
+/// Fallback home directory when `ProjectDirs` is unavailable.
+fn dirs_fallback() -> PathBuf {
+    std::env::var("HOME").map_or_else(|_| PathBuf::from("."), PathBuf::from)
 }
 
 // --- Load / Save ---

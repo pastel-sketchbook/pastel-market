@@ -172,6 +172,17 @@ pub fn draw_header(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
         status_label,
         Style::default().fg(ac).add_modifier(Modifier::BOLD),
     ));
+
+    // Decision badge
+    let pending = app.decisions.entries.iter().filter(|e| e.resolution.is_none()).count();
+    let resolved = app.decisions.entries.iter().filter(|e| e.resolution.is_some()).count();
+    if pending > 0 || resolved > 0 {
+        left_spans.push(Span::styled(
+            format!(" [{pending} pending / {resolved} resolved] "),
+            Style::default().fg(theme.muted),
+        ));
+    }
+
     frame.render_widget(Paragraph::new(Line::from(left_spans)), cols[0]);
 
     // Right: market status + clock + index summary.

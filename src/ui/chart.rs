@@ -47,18 +47,30 @@ pub fn draw_chart_overlay(frame: &mut Frame, app: &App, theme: &'static Theme) {
         chart_area,
     );
 
-    let title = format!(" {} — Performance ", app.chart_symbol);
+    let report = app.analyze_stock(&app.chart_symbol);
+    let (cr, cg, cb) = report.rating.color_rgb();
+    let rating_span = Span::styled(
+        format!(" [{}] ", report.rating.label()),
+        Style::default()
+            .fg(Color::Rgb(cr, cg, cb))
+            .bg(theme.chart_bg)
+            .add_modifier(Modifier::BOLD),
+    );
 
     // Outer block.
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
-        .title(Span::styled(
-            title,
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::BOLD),
-        ))
+        .title(Line::from(vec![
+            Span::styled(
+                format!(" {} — Performance ", app.chart_symbol),
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.chart_bg)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            rating_span,
+        ]))
         .style(Style::default().bg(theme.chart_bg).fg(theme.fg));
     frame.render_widget(block, chart_area);
 
@@ -111,7 +123,7 @@ fn draw_chart_section(frame: &mut Frame, app: &App, theme: &'static Theme, area:
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // range tabs
-            Constraint::Min(3),    // chart
+            Constraint::Min(3),    // chart + indicators
             Constraint::Length(1), // help bar
         ])
         .split(area);
@@ -134,8 +146,44 @@ fn draw_chart_section(frame: &mut Frame, app: &App, theme: &'static Theme, area:
             .style(Style::default().fg(theme.muted).bg(theme.chart_bg));
         frame.render_widget(loading, inner_layout[1]);
     } else {
-        let chart_area_padded = inner_layout[1].inner(Margin::new(1, 0));
+        // Split chart area for indicators.
+        let has_rsi = app.chart_show_rsi;
+        let has_macd = app.chart_show_macd;
+        let sub_chart_count =
+            1 + u16::from(has_rsi) + u16::from(has_macd);
+
+        let chart_constraints: Vec<Constraint> = if sub_chart_count == 1 {
+            vec![Constraint::Percentage(100)]
+        } else {
+            // Main chart gets majority, sub-charts get fixed height.
+            let sub_height = 7_u16;
+            let subs = sub_chart_count - 1;
+            vec![
+                Constraint::Min(5),
+                // One constraint per sub-chart.
+            ]
+            .into_iter()
+            .chain(std::iter::repeat_n(Constraint::Length(sub_height), subs as usize))
+            .collect()
+        };
+
+        let chart_sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(chart_constraints)
+            .split(inner_layout[1]);
+
+        let chart_area_padded = chart_sections[0].inner(Margin::new(1, 0));
         draw_line_chart(frame, app, theme, chart_area_padded);
+
+        // Render sub-charts.
+        let mut sub_idx = 1;
+        if has_rsi {
+            draw_rsi_chart(frame, app, theme, chart_sections[sub_idx]);
+            sub_idx += 1;
+        }
+        if has_macd {
+            draw_macd_chart(frame, app, theme, chart_sections[sub_idx]);
+        }
     }
 
     // Help bar with panel tab indicators.
@@ -158,6 +206,12 @@ fn build_help_spans(app: &App, theme: &'static Theme) -> Vec<Span<'static>> {
             Span::styled(" range  ", Style::default().fg(theme.muted)),
             Span::styled("←/→", Style::default().fg(theme.accent)),
             Span::styled(" prev/next  ", Style::default().fg(theme.muted)),
+            Span::styled("v", Style::default().fg(if app.chart_show_sma { theme.accent } else { theme.muted })),
+            Span::styled(" SMA  ", Style::default().fg(theme.muted)),
+            Span::styled("i", Style::default().fg(if app.chart_show_rsi { theme.accent } else { theme.muted })),
+            Span::styled(" RSI  ", Style::default().fg(theme.muted)),
+            Span::styled("m", Style::default().fg(if app.chart_show_macd { theme.accent } else { theme.muted })),
+            Span::styled(" MACD  ", Style::default().fg(theme.muted)),
         ]);
     } else {
         spans.extend([
@@ -179,11 +233,17 @@ fn build_help_spans(app: &App, theme: &'static Theme) -> Vec<Span<'static>> {
 
     // Tab indicators.
     spans.push(Span::raw(" "));
-    for tab in [ChartTab::Chart, ChartTab::News, ChartTab::SecFilings] {
+    for tab in [
+        ChartTab::Chart,
+        ChartTab::News,
+        ChartTab::SecFilings,
+        ChartTab::Thesis,
+    ] {
         let label = match tab {
             ChartTab::Chart => "Chart",
             ChartTab::News => "News",
             ChartTab::SecFilings => "SEC",
+            ChartTab::Thesis => "Thesis",
         };
         if tab == app.chart_tab {
             spans.push(Span::styled(
@@ -204,13 +264,77 @@ fn build_help_spans(app: &App, theme: &'static Theme) -> Vec<Span<'static>> {
     spans
 }
 
-/// Draw the bottom panel (News or SEC Filings).
+/// Draw the bottom panel (News, SEC Filings, or Thesis).
 fn draw_bottom_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
     match app.chart_tab {
         ChartTab::News => draw_news_panel(frame, app, theme, area),
         ChartTab::SecFilings => draw_sec_panel(frame, app, theme, area),
+        ChartTab::Thesis => draw_thesis_panel(frame, app, theme, area),
         ChartTab::Chart => {} // unreachable — only called when has_panel
     }
+}
+
+/// Draw the auto-derived Bull/Bear signals thesis panel.
+fn draw_thesis_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
+    let report = app.analyze_stock(&app.chart_symbol);
+
+    let layout = Layout::default()
+        .direction(ratatui::layout::Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(area);
+
+    let bull_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.gain))
+        .title(" Bull Signals ")
+        .title_style(
+            Style::default()
+                .fg(theme.gain)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(theme.chart_bg));
+
+    let bear_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.loss))
+        .title(" Bear Signals ")
+        .title_style(
+            Style::default()
+                .fg(theme.loss)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(theme.chart_bg));
+
+    let bull_items: Vec<ratatui::widgets::ListItem> = if report.bull_signals.is_empty() {
+        vec![ratatui::widgets::ListItem::new("No strong bull signals detected.")
+            .style(Style::default().fg(theme.muted))]
+    } else {
+        report
+            .bull_signals
+            .iter()
+            .map(|s| {
+                ratatui::widgets::ListItem::new(format!("• {}", s.label))
+                    .style(Style::default().fg(theme.gain))
+            })
+            .collect()
+    };
+
+    let bear_items: Vec<ratatui::widgets::ListItem> = if report.bear_signals.is_empty() {
+        vec![ratatui::widgets::ListItem::new("No strong bear signals detected.")
+            .style(Style::default().fg(theme.muted))]
+    } else {
+        report
+            .bear_signals
+            .iter()
+            .map(|s| {
+                ratatui::widgets::ListItem::new(format!("• {}", s.label))
+                    .style(Style::default().fg(theme.loss))
+            })
+            .collect()
+    };
+
+    frame.render_widget(ratatui::widgets::List::new(bull_items).block(bull_block), layout[0]);
+    frame.render_widget(ratatui::widgets::List::new(bear_items).block(bear_block), layout[1]);
 }
 
 /// Draw the news headlines panel with optional inline summary.
@@ -505,6 +629,7 @@ fn form_type_label(form_type: &str) -> &str {
 }
 
 /// Render the actual line chart from `app.chart_data`.
+#[allow(clippy::too_many_lines)]
 fn draw_line_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
     let points = &app.chart_data;
     if points.is_empty() {
@@ -547,6 +672,47 @@ fn draw_line_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
         .style(Style::default().fg(line_color))
         .data(&data);
 
+    // SMA overlays.
+    let prices: Vec<f64> = points.iter().map(|p| p.close).collect();
+    let sma50_raw = market_core::indicators::compute_sma(&prices, 50);
+    let sma200_raw = market_core::indicators::compute_sma(&prices, 200);
+
+    #[allow(clippy::cast_precision_loss)]
+    let sma50_data: Vec<(f64, f64)> = sma50_raw
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| !v.is_nan())
+        .map(|(i, v)| (i as f64, *v))
+        .collect();
+    #[allow(clippy::cast_precision_loss)]
+    let sma200_data: Vec<(f64, f64)> = sma200_raw
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| !v.is_nan())
+        .map(|(i, v)| (i as f64, *v))
+        .collect();
+
+    let mut datasets = vec![dataset];
+
+    if app.chart_show_sma && !sma50_data.is_empty() {
+        datasets.push(
+            Dataset::default()
+                .marker(symbols::Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(Style::default().fg(Color::Yellow))
+                .data(&sma50_data),
+        );
+    }
+    if app.chart_show_sma && !sma200_data.is_empty() {
+        datasets.push(
+            Dataset::default()
+                .marker(symbols::Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(Style::default().fg(Color::Magenta))
+                .data(&sma200_data),
+        );
+    }
+
     // Y-axis labels: 5 evenly spaced for subtle grid lines.
     let y_step = (y_hi - y_lo) / 4.0;
     let y_labels: Vec<Span> = (0..5)
@@ -586,7 +752,7 @@ fn draw_line_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
     // Build y_labels clone for grid calculation (Chart consumes the original).
     let y_label_widths: Vec<usize> = y_labels.iter().map(Span::width).collect();
 
-    let chart = Chart::new(vec![dataset])
+    let chart = Chart::new(datasets)
         .block(
             Block::default()
                 .title(Span::styled(
@@ -682,6 +848,140 @@ fn draw_grid_lines(
             frame.render_widget(GridLine { y: col, ..v_line }, area);
         }
     }
+}
+
+/// Draw RSI(14) subplot.
+#[allow(clippy::cast_precision_loss)]
+fn draw_rsi_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
+    let prices: Vec<f64> = app.chart_data.iter().map(|p| p.close).collect();
+    let rsi = market_core::indicators::compute_rsi(&prices, 14);
+
+    let data: Vec<(f64, f64)> = rsi
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| !v.is_nan())
+        .map(|(i, v)| (i as f64, *v))
+        .collect();
+
+    if data.is_empty() {
+        return;
+    }
+
+    let max_x = prices.len().saturating_sub(1) as f64;
+
+    let dataset = Dataset::default()
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::default().fg(Color::Cyan))
+        .data(&data);
+
+    let y_labels = vec![
+        Span::styled("0", Style::default().fg(theme.muted)),
+        Span::styled("30", Style::default().fg(Color::Green)),
+        Span::styled("50", Style::default().fg(theme.fg)),
+        Span::styled("70", Style::default().fg(Color::Red)),
+        Span::styled("100", Style::default().fg(theme.muted)),
+    ];
+
+    let chart = Chart::new(vec![dataset])
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " RSI(14) ",
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(theme.border))
+                .style(Style::default().bg(theme.chart_bg)),
+        )
+        .x_axis(
+            Axis::default()
+                .bounds([0.0, max_x])
+                .style(Style::default().fg(theme.border)),
+        )
+        .y_axis(
+            Axis::default()
+                .labels(y_labels)
+                .bounds([0.0, 100.0])
+                .style(Style::default().fg(theme.border)),
+        )
+        .style(Style::default().bg(theme.chart_bg));
+
+    frame.render_widget(chart, area);
+}
+
+/// Draw MACD(12,26,9) subplot as histogram.
+#[allow(clippy::cast_precision_loss)]
+fn draw_macd_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rect) {
+    let prices: Vec<f64> = app.chart_data.iter().map(|p| p.close).collect();
+    let macd = market_core::indicators::compute_macd(&prices);
+
+    let macd_data: Vec<(f64, f64)> = macd
+        .macd_line
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| !v.is_nan())
+        .map(|(i, v)| (i as f64, *v))
+        .collect();
+
+    let signal_data: Vec<(f64, f64)> = macd
+        .signal_line
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| !v.is_nan())
+        .map(|(i, v)| (i as f64, *v))
+        .collect();
+
+    if macd_data.is_empty() {
+        return;
+    }
+
+    let max_x = prices.len().saturating_sub(1) as f64;
+
+    // Compute Y bounds from MACD data.
+    let all_vals: Vec<f64> = macd_data.iter().map(|(_, y)| *y)
+        .chain(signal_data.iter().map(|(_, y)| *y))
+        .collect();
+    let min_y = all_vals.iter().copied().fold(f64::INFINITY, f64::min);
+    let max_y = all_vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let y_pad = (max_y - min_y).max(0.01) * 0.1;
+
+    let macd_dataset = Dataset::default()
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::default().fg(Color::Blue))
+        .data(&macd_data);
+
+    let signal_dataset = Dataset::default()
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::default().fg(Color::Red))
+        .data(&signal_data);
+
+    let chart = Chart::new(vec![macd_dataset, signal_dataset])
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " MACD(12,26,9) ",
+                    Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(theme.border))
+                .style(Style::default().bg(theme.chart_bg)),
+        )
+        .x_axis(
+            Axis::default()
+                .bounds([0.0, max_x])
+                .style(Style::default().fg(theme.border)),
+        )
+        .y_axis(
+            Axis::default()
+                .bounds([min_y - y_pad, max_y + y_pad])
+                .style(Style::default().fg(theme.border)),
+        )
+        .style(Style::default().bg(theme.chart_bg));
+
+    frame.render_widget(chart, area);
 }
 
 /// Format a price for axis labels.

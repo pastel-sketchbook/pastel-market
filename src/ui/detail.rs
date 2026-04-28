@@ -115,6 +115,19 @@ pub fn draw_detail(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
             ]));
         }
 
+        // Analyst Scores
+        let report = app.analyze_stock(&q.symbol);
+        lines.push(Line::from(vec![
+            Span::styled("Analysis: ", label_style),
+            Span::raw(format!("Comp {} | Fund {} | Tech {} | Sent {} | Cat {}", 
+                report.composite, 
+                report.fundamentals, 
+                report.technical, 
+                report.sentiment, 
+                report.news_catalyst
+            )),
+        ]));
+
         lines
     } else {
         vec![Line::from("No symbol selected")]

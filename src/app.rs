@@ -14,6 +14,7 @@ use market_core::domain::{
     ChartRange, FilterMode, MarketStatus, NewsItem, PricePoint, Quote, ScannerList, ScreenerResult,
     SecFiling, SortMode, TopMovers, ViewMode, Watchlist,
 };
+use market_core::decisions::{Action, DecisionEntry, DecisionLog};
 use market_core::theme::{self, Theme};
 use whispers::WhisperResult;
 use yahoo_provider::QuoteProvider;
@@ -63,6 +64,8 @@ pub enum ChartTab {
     News,
     /// SEC EDGAR filings.
     SecFilings,
+    /// Auto-derived Bull/Bear signals.
+    Thesis,
 }
 
 impl ChartTab {
@@ -72,7 +75,8 @@ impl ChartTab {
         match self {
             Self::Chart => Self::News,
             Self::News => Self::SecFilings,
-            Self::SecFilings => Self::Chart,
+            Self::SecFilings => Self::Thesis,
+            Self::Thesis => Self::Chart,
         }
     }
 
@@ -80,9 +84,10 @@ impl ChartTab {
     #[must_use]
     pub const fn prev(self) -> Self {
         match self {
-            Self::Chart => Self::SecFilings,
+            Self::Chart => Self::Thesis,
             Self::News => Self::Chart,
             Self::SecFilings => Self::News,
+            Self::Thesis => Self::SecFilings,
         }
     }
 }
@@ -144,9 +149,10 @@ pub struct App {
     pub scanner_selected: usize,
     pub scanner_table_state: ratatui::widgets::TableState,
 
-    // -- News (from Reins Market) --
+    // -- News & Risk (from Reins Market) --
     pub news_headlines: Vec<NewsItem>,
     pub show_news: bool,
+    pub show_risk: bool,
 
     // -- QC & Conviction (from Pastel Picker) --
     pub focus: Focus,
@@ -189,6 +195,12 @@ pub struct App {
     pub chart_sec_content_loading: bool,
     /// Scroll offset (line) within the filing content panel.
     pub chart_sec_scroll: usize,
+    /// Whether to show the 50/200 SMA lines (Phase 2: technical indicators).
+    pub chart_show_sma: bool,
+    /// Whether to show the RSI subplot (Phase 2: technical indicators).
+    pub chart_show_rsi: bool,
+    /// Whether to show the MACD subplot (Phase 2: technical indicators).
+    pub chart_show_macd: bool,
     /// Horizontal split ratio (0.0–1.0) for detail panels (news summary, SEC detail).
     /// Represents the left panel's share. Draggable with mouse.
     pub chart_detail_split: f64,
@@ -205,8 +217,9 @@ pub struct App {
     pub top_movers: TopMovers,
     pub loading: bool,
 
-    // -- Alert state --
+    // -- Alert & Journal state --
     pub alert_fired: bool,
+    pub decisions: DecisionLog,
 
     // -- Private --
     skip_persist: bool,
@@ -226,6 +239,7 @@ impl App {
         let prefs = config::load_preferences();
         let session = config::load_session();
         let qc_session = QcSession::load();
+        let decisions = DecisionLog::load();
         let data = market_core::domain::mock::load_mock_data().unwrap_or_else(|e| {
             warn!(error = %e, "failed to load mock data");
             fallback_mock_data()
@@ -236,13 +250,34 @@ impl App {
         let filter_mode = config::filter_mode_from_string(&session.filter_mode);
         let view_mode = config::view_mode_from_string(&session.view_mode);
 
-        let client: Option<Arc<dyn QuoteProvider>> = match yahoo_provider::YahooClient::new() {
-            Ok(c) => Some(Arc::new(c)),
-            Err(e) => {
-                warn!(error = %e, "Yahoo Finance session failed");
-                None
-            }
-        };
+        let client: Option<Arc<dyn QuoteProvider>> =
+            if prefs.data_vendors.quotes == "alphavantage" {
+                // Try Alpha Vantage first, fall back to Yahoo.
+                match alphavantage::AlphaVantageClient::new() {
+                    Ok(c) => {
+                        info!("using Alpha Vantage as quote provider");
+                        Some(Arc::new(c))
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Alpha Vantage init failed, falling back to Yahoo");
+                        match yahoo_provider::YahooClient::new() {
+                            Ok(c) => Some(Arc::new(c)),
+                            Err(e2) => {
+                                warn!(error = %e2, "Yahoo Finance session also failed");
+                                None
+                            }
+                        }
+                    }
+                }
+            } else {
+                match yahoo_provider::YahooClient::new() {
+                    Ok(c) => Some(Arc::new(c)),
+                    Err(e) => {
+                        warn!(error = %e, "Yahoo Finance session failed");
+                        None
+                    }
+                }
+            };
 
         let worker = client.map(Worker::new);
 
@@ -296,6 +331,7 @@ impl App {
             scanner_table_state: ratatui::widgets::TableState::default(),
             news_headlines: Vec::new(),
             show_news: false,
+            show_risk: false,
             focus: Focus::default(),
             qc_labels: data.qc_checklist.items,
             qc_state: qc_session.qc_state,
@@ -324,6 +360,9 @@ impl App {
             chart_sec_content: None,
             chart_sec_content_loading: false,
             chart_sec_scroll: 0,
+            chart_show_sma: false,
+            chart_show_rsi: false,
+            chart_show_macd: false,
             chart_detail_split: 0.5,
             chart_detail_dragging: false,
             theme_index,
@@ -333,6 +372,7 @@ impl App {
             top_movers: TopMovers::default(),
             loading: false,
             alert_fired: false,
+            decisions,
             skip_persist: false,
             worker,
         }
@@ -367,6 +407,7 @@ impl App {
             scanner_table_state: ratatui::widgets::TableState::default(),
             news_headlines: Vec::new(),
             show_news: false,
+            show_risk: false,
             focus: Focus::default(),
             qc_labels: data.qc_checklist.items,
             qc_state: HashMap::new(),
@@ -395,6 +436,9 @@ impl App {
             chart_sec_content: None,
             chart_sec_content_loading: false,
             chart_sec_scroll: 0,
+            chart_show_sma: false,
+            chart_show_rsi: false,
+            chart_show_macd: false,
             chart_detail_split: 0.5,
             chart_detail_dragging: false,
             theme_index: 0,
@@ -407,6 +451,7 @@ impl App {
             },
             loading: false,
             alert_fired: false,
+            decisions: DecisionLog::default(),
             skip_persist: true,
             worker: Some(Worker::new(provider)),
         }
@@ -499,6 +544,59 @@ impl App {
             }
             _ => None,
         }
+    }
+
+    /// Run the multi-analyst pipeline on a ticker, assembling all cached data.
+    ///
+    /// Returns `None` if there is no quote data at all for the ticker.
+    #[must_use]
+    pub fn analyze_stock(&self, ticker: &str) -> market_core::analysis::AnalysisReport {
+        use market_core::analysis::{AnalysisInput, analyze};
+
+        let quote = self
+            .watchlist
+            .quotes()
+            .iter()
+            .flatten()
+            .find(|q| q.symbol == ticker)
+            .or_else(|| self.scanner_quotes.iter().find(|q| q.symbol == ticker));
+
+        let screener = self
+            .screener_results
+            .iter()
+            .find(|r| r.ticker == ticker);
+
+        let qc = if self.qc_labels.is_empty() {
+            None
+        } else {
+            Some((self.qc_score(ticker), self.qc_labels.len()))
+        };
+
+        let prices_for_analysis: Vec<f64> = self
+            .sparkline_cache
+            .get(ticker)
+            .map(|pts| pts.iter().map(|p| p.close).collect())
+            .unwrap_or_default();
+
+        let input = AnalysisInput {
+            quote,
+            screener,
+            news: &self.chart_news,
+            insider_ownership_pct: self.insider_ownership.get(ticker).copied(),
+            sector_heat: self
+                .sector_heat
+                .get(
+                    quote
+                        .and_then(|q| q.sector.as_deref())
+                        .unwrap_or_default(),
+                )
+                .copied(),
+            past_beats: self.past_beats.get(ticker).copied(),
+            qc_score: qc,
+            prices: &prices_for_analysis,
+        };
+
+        analyze(&input)
     }
 
     /// Whether QC item at `item_index` is auto-checked for `ticker` from live data.
@@ -894,10 +992,161 @@ impl App {
         if self.ticks_since_refresh >= threshold {
             self.ticks_since_refresh = 0;
             self.refresh_quotes();
+            self.resolve_decisions();
         }
     }
 
-    // -- Key handling --------------------------------------------------------
+    // -- Journal & Decisions ---------------------------------------------------
+
+    /// Record a trade decision for the currently selected ticker.
+    pub fn record_decision(&mut self, action: Action) {
+        let ticker = match self.view_mode {
+            ViewMode::Watchlist | ViewMode::QualityControl => {
+                self.watchlist.selected_symbol().map(String::from)
+            }
+            ViewMode::Scanner => self
+                .scanner_quotes
+                .get(self.scanner_selected)
+                .map(|q| q.symbol.clone()),
+            ViewMode::Journal => None,
+        };
+
+        if let Some(ticker) = ticker {
+            let report = self.analyze_stock(&ticker);
+            let price = self
+                .watchlist
+                .quotes()
+                .iter()
+                .flatten()
+                .find(|q| q.symbol == ticker)
+                .or_else(|| self.scanner_quotes.iter().find(|q| q.symbol == ticker))
+                .map_or(0.0, |q| q.regular_market_price);
+
+            let spy_price = self
+                .index_quotes
+                .iter()
+                .flatten()
+                .find(|q| q.symbol == "^GSPC")
+                .map(|q| q.regular_market_price);
+
+            let qc = self.qc_score(&ticker);
+            let pe = self
+                .screener_results
+                .iter()
+                .find(|r| r.ticker == ticker)
+                .and_then(|r| r.pe.parse::<f64>().ok());
+
+            let now = chrono::Utc::now();
+            let entry = DecisionEntry {
+                id: format!("decision_{}", now.timestamp_millis()),
+                ticker: ticker.clone(),
+                date: now,
+                action,
+                rating: report.rating,
+                composite_score: report.composite,
+                qc_score: qc,
+                price_at_decision: price,
+                spy_at_decision: spy_price,
+                pe_at_decision: pe,
+                resolution: None,
+            };
+
+            self.decisions.append(entry);
+            if let Err(e) = self.decisions.save() {
+                warn!(error = %e, "Failed to save decision log");
+            } else {
+                self.status_message = format!("Recorded {action} decision for {ticker}");
+            }
+        }
+    }
+
+    /// Resolve pending decision outcomes based on current quotes.
+    pub fn resolve_decisions(&mut self) {
+        let mut changed = false;
+
+        for entry in &mut self.decisions.entries {
+            // Re-resolve to update current return pct continuously.
+            let current_price = self
+                .watchlist
+                .quotes()
+                .iter()
+                .flatten()
+                .find(|q| q.symbol == entry.ticker)
+                .map(|q| q.regular_market_price);
+
+            let current_spy = self
+                .index_quotes
+                .iter()
+                .flatten()
+                .find(|q| q.symbol == "^GSPC")
+                .map(|q| q.regular_market_price);
+
+            if let Some(price) = current_price {
+                entry.resolve(price, current_spy);
+                changed = true;
+            }
+        }
+
+        if changed {
+            let _ = self.decisions.save();
+        }
+    }
+
+    /// Export a markdown analysis report for the currently selected ticker.
+    pub fn export_report(&mut self) {
+        let ticker = match self.view_mode {
+            ViewMode::Watchlist | ViewMode::QualityControl => {
+                self.watchlist.selected_symbol().map(String::from)
+            }
+            ViewMode::Scanner => self
+                .scanner_quotes
+                .get(self.scanner_selected)
+                .map(|q| q.symbol.clone()),
+            ViewMode::Journal => None,
+        };
+
+        if let Some(ticker) = ticker {
+            let quote = self
+                .watchlist
+                .quotes()
+                .iter()
+                .flatten()
+                .find(|q| q.symbol == ticker)
+                .or_else(|| self.scanner_quotes.iter().find(|q| q.symbol == ticker));
+
+            let screener = self
+                .screener_results
+                .iter()
+                .find(|r| r.ticker == ticker);
+
+            let analysis = self.analyze_stock(&ticker);
+            
+            // Reconstruct the full QC state array properly
+            let qc_state_vec = self.qc_state.get(&ticker);
+
+            let data = market_core::report::ReportData {
+                ticker: ticker.clone(),
+                quote,
+                screener,
+                analysis,
+                qc_labels: &self.qc_labels,
+                qc_state: qc_state_vec.map(std::vec::Vec::as_slice),
+                news: &self.chart_news,
+            };
+
+            match market_core::report::export_report(&data) {
+                Ok(path) => {
+                    self.status_message = format!("Report saved: {}", path.display());
+                }
+                Err(e) => {
+                    warn!(error = %e, "Failed to export report");
+                    self.status_message = format!("Export failed: {e}");
+                }
+            }
+        }
+    }
+
+    // -- Event handling --------------------------------------------------------------
 
     /// Dispatch a mouse event.
     pub fn handle_mouse(&mut self, mouse: MouseEvent) {
@@ -1071,10 +1320,20 @@ impl App {
             // Theme
             KeyCode::Char('t') => self.next_theme(),
 
+            // Record Trade Decisions
+            KeyCode::Char('B') => self.record_decision(Action::Buy),
+            KeyCode::Char('S') => self.record_decision(Action::Sell),
+            KeyCode::Char('H') => self.record_decision(Action::Hold),
+
             // Add symbol (watchlist view)
             KeyCode::Char('a') if self.view_mode == ViewMode::Watchlist => {
                 self.input_mode = InputMode::Adding;
                 self.input_buffer.clear();
+            }
+
+            // Export markdown report
+            KeyCode::Char('e') if self.view_mode == ViewMode::Watchlist || self.view_mode == ViewMode::QualityControl => {
+                self.export_report();
             }
 
             // Delete symbol
@@ -1100,6 +1359,11 @@ impl App {
                 } else {
                     self.news_headlines.clear();
                 }
+            }
+
+            // Risk toggle
+            KeyCode::Char('x') if self.view_mode == ViewMode::Watchlist => {
+                self.show_risk = !self.show_risk;
             }
 
             // Scanner number keys
@@ -1188,7 +1452,7 @@ impl App {
                     let idx = self.watchlist.selected();
                     syms.get(idx).cloned()
                 }),
-            ViewMode::QualityControl => self.selected_screener_ticker(),
+            ViewMode::QualityControl | ViewMode::Journal => self.selected_screener_ticker(),
         };
         let Some(sym) = symbol else { return };
 
@@ -1285,6 +1549,17 @@ impl App {
                 if let Some(r) = Self::range_from_digit(c) {
                     self.switch_chart_range(r);
                 }
+            }
+
+            // Technical indicator toggles (chart view only).
+            KeyCode::Char('v') if self.chart_tab == ChartTab::Chart => {
+                self.chart_show_sma = !self.chart_show_sma;
+            }
+            KeyCode::Char('i') if self.chart_tab == ChartTab::Chart => {
+                self.chart_show_rsi = !self.chart_show_rsi;
+            }
+            KeyCode::Char('m') if self.chart_tab == ChartTab::Chart => {
+                self.chart_show_macd = !self.chart_show_macd;
             }
 
             // Scroll news content when detail panel is open.
@@ -1581,6 +1856,7 @@ impl App {
         }
         let prefs = Preferences {
             theme: self.theme().name.to_string(),
+            ..Default::default()
         };
         let _ = config::save_preferences(&prefs);
     }
@@ -2005,6 +2281,8 @@ mod tests {
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.view_mode, ViewMode::QualityControl);
         app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.view_mode, ViewMode::Journal);
+        app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.view_mode, ViewMode::Watchlist);
     }
 
@@ -2012,7 +2290,7 @@ mod tests {
     fn backtab_cycles_reverse() {
         let mut app = make_app(&["AAPL"]);
         app.handle_key(key(KeyCode::BackTab));
-        assert_eq!(app.view_mode, ViewMode::QualityControl);
+        assert_eq!(app.view_mode, ViewMode::Journal);
     }
 
     // -- Sort & Filter --------------------------------------------------------
@@ -2110,6 +2388,7 @@ mod tests {
             price: "175".to_string(),
             change: "+1.15%".to_string(),
             volume: "50M".to_string(),
+            beta: "1.2".to_string(),
         });
         app.view_mode = ViewMode::QualityControl;
         app.toggle_qc();
@@ -2405,6 +2684,27 @@ mod tests {
     // -- Chart tab cycling and panel navigation --------------------------------
 
     #[test]
+    fn chart_indicator_toggles() {
+        let mut app = make_app(&["AAPL"]);
+        refresh_and_drain(&mut app);
+        app.handle_key(key(KeyCode::Enter)); // open chart
+        assert!(!app.chart_show_sma);
+        assert!(!app.chart_show_rsi);
+        assert!(!app.chart_show_macd);
+
+        app.handle_key(key(KeyCode::Char('v')));
+        assert!(app.chart_show_sma);
+        app.handle_key(key(KeyCode::Char('i')));
+        assert!(app.chart_show_rsi);
+        app.handle_key(key(KeyCode::Char('m')));
+        assert!(app.chart_show_macd);
+
+        // Toggle off.
+        app.handle_key(key(KeyCode::Char('v')));
+        assert!(!app.chart_show_sma);
+    }
+
+    #[test]
     fn chart_tab_cycles_with_tab_key() {
         let mut app = make_app(&["AAPL"]);
         refresh_and_drain(&mut app);
@@ -2415,6 +2715,8 @@ mod tests {
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.chart_tab, ChartTab::SecFilings);
         app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.chart_tab, ChartTab::Thesis);
+        app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.chart_tab, ChartTab::Chart);
     }
 
@@ -2424,6 +2726,8 @@ mod tests {
         refresh_and_drain(&mut app);
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.chart_tab, ChartTab::Chart);
+        app.handle_key(key(KeyCode::BackTab));
+        assert_eq!(app.chart_tab, ChartTab::Thesis);
         app.handle_key(key(KeyCode::BackTab));
         assert_eq!(app.chart_tab, ChartTab::SecFilings);
         app.handle_key(key(KeyCode::BackTab));

@@ -221,6 +221,11 @@ pub struct App {
     pub alert_fired: bool,
     pub decisions: DecisionLog,
 
+    /// On the first quotes update after startup, snap the watchlist selection
+    /// to the top of the displayed (sorted + filtered) order. Cleared after
+    /// the first apply.
+    pub initial_selection_pending: bool,
+
     // -- Private --
     skip_persist: bool,
     worker: Option<Worker>,
@@ -373,6 +378,7 @@ impl App {
             loading: false,
             alert_fired: false,
             decisions,
+            initial_selection_pending: true,
             skip_persist: false,
             worker,
         }
@@ -452,6 +458,7 @@ impl App {
             loading: false,
             alert_fired: false,
             decisions: DecisionLog::default(),
+            initial_selection_pending: false,
             skip_persist: true,
             worker: Some(Worker::new(provider)),
         }
@@ -575,10 +582,16 @@ impl App {
             .map(|pts| pts.iter().map(|p| p.close).collect())
             .unwrap_or_default();
 
+        // Rating must be deterministic per-ticker so list view and graph view
+        // agree. We don't have a per-ticker news cache (chart_news only exists
+        // for the currently opened chart symbol), so omit news here. The chart
+        // view still displays news separately in its own panel.
+        let news: &[market_core::domain::NewsItem] = &[];
+
         let input = AnalysisInput {
             quote,
             screener,
-            news: &self.chart_news,
+            news,
             insider_ownership_pct: self.insider_ownership.get(ticker).copied(),
             sector_heat: self
                 .sector_heat
@@ -845,6 +858,16 @@ impl App {
                     self.top_movers = TopMovers::from_quotes(self.watchlist.quotes(), 3);
                     self.status_message.clear();
                     self.loading = false;
+                    // On the first successful quote load after startup, snap
+                    // the selection to the top symbol of the displayed
+                    // (sorted + filtered) order so the user sees the cursor
+                    // on the visible top row.
+                    if self.initial_selection_pending {
+                        if let Some(&first) = self.displayed_watchlist_indices().first() {
+                            self.watchlist.set_selected(first);
+                        }
+                        self.initial_selection_pending = false;
+                    }
                     // Now that quotes are available, fetch sparkline for selected.
                     self.refresh_sparkline();
                 }
@@ -1702,6 +1725,47 @@ impl App {
 
     // -- View-mode-aware table navigation ------------------------------------
 
+    /// Indices into `watchlist.symbols()` in the order they are displayed
+    /// (after applying the active sort and filter). Used by arrow-key
+    /// navigation so selection follows the visible row order.
+    fn displayed_watchlist_indices(&self) -> Vec<usize> {
+        let sorted = self.watchlist.sorted_indices(self.sort_mode);
+        let quotes = self.watchlist.quotes();
+        sorted
+            .into_iter()
+            .filter(|&i| {
+                quotes
+                    .get(i)
+                    .and_then(Option::as_ref)
+                    .map_or(self.filter_mode == FilterMode::All, |q| {
+                        self.filter_mode.matches(q)
+                    })
+            })
+            .collect()
+    }
+
+    /// Advance the watchlist selection by one through the displayed
+    /// (sorted + filtered) order, wrapping around. If `forward` is false,
+    /// move backward instead.
+    fn step_watchlist_selection(&mut self, forward: bool) {
+        let order = self.displayed_watchlist_indices();
+        if order.is_empty() {
+            return;
+        }
+        let raw_selected = self.watchlist.selected();
+        let cur = order
+            .iter()
+            .position(|&i| i == raw_selected)
+            .unwrap_or(0);
+        let len = order.len();
+        let next = if forward {
+            (cur + 1) % len
+        } else {
+            cur.checked_sub(1).unwrap_or(len - 1)
+        };
+        self.watchlist.set_selected(order[next]);
+    }
+
     fn navigate_table_down(&mut self) {
         match self.view_mode {
             ViewMode::Scanner => {
@@ -1709,7 +1773,7 @@ impl App {
                     self.scanner_selected = (self.scanner_selected + 1) % self.scanner_quotes.len();
                 }
             }
-            _ => self.watchlist.select_next(),
+            _ => self.step_watchlist_selection(true),
         }
     }
 
@@ -1723,14 +1787,20 @@ impl App {
                         .unwrap_or(self.scanner_quotes.len().saturating_sub(1));
                 }
             }
-            _ => self.watchlist.select_previous(),
+            _ => self.step_watchlist_selection(false),
         }
     }
 
     fn navigate_table_first(&mut self) {
         match self.view_mode {
             ViewMode::Scanner => self.scanner_selected = 0,
-            _ => self.watchlist.select_first(),
+            _ => {
+                if let Some(&first) = self.displayed_watchlist_indices().first() {
+                    self.watchlist.set_selected(first);
+                } else {
+                    self.watchlist.select_first();
+                }
+            }
         }
     }
 
@@ -1741,7 +1811,13 @@ impl App {
                     self.scanner_selected = self.scanner_quotes.len().saturating_sub(1);
                 }
             }
-            _ => self.watchlist.select_last(),
+            _ => {
+                if let Some(&last) = self.displayed_watchlist_indices().last() {
+                    self.watchlist.set_selected(last);
+                } else {
+                    self.watchlist.select_last();
+                }
+            }
         }
     }
 

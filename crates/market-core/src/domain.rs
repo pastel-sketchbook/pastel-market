@@ -236,6 +236,15 @@ impl Watchlist {
         self.symbols.get(self.selected).map(String::as_str)
     }
 
+    /// Set the selected index directly (clamped to the valid range).
+    pub fn set_selected(&mut self, index: usize) {
+        if self.symbols.is_empty() {
+            self.selected = 0;
+        } else {
+            self.selected = index.min(self.symbols.len().saturating_sub(1));
+        }
+    }
+
     /// Move selection down by one.
     pub fn select_next(&mut self) {
         if !self.symbols.is_empty() {

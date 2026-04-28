@@ -9,12 +9,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKi
 use tracing::{info, warn};
 
 use market_core::config::{self, Preferences, QcSession, Session};
+use market_core::decisions::{Action, DecisionEntry, DecisionLog};
 use market_core::domain::mock::MockData;
 use market_core::domain::{
     ChartRange, FilterMode, MarketStatus, NewsItem, PricePoint, Quote, ScannerList, ScreenerResult,
     SecFiling, SortMode, TopMovers, ViewMode, Watchlist,
 };
-use market_core::decisions::{Action, DecisionEntry, DecisionLog};
 use market_core::theme::{self, Theme};
 use whispers::WhisperResult;
 use yahoo_provider::QuoteProvider;
@@ -250,34 +250,34 @@ impl App {
         let filter_mode = config::filter_mode_from_string(&session.filter_mode);
         let view_mode = config::view_mode_from_string(&session.view_mode);
 
-        let client: Option<Arc<dyn QuoteProvider>> =
-            if prefs.data_vendors.quotes == "alphavantage" {
-                // Try Alpha Vantage first, fall back to Yahoo.
-                match alphavantage::AlphaVantageClient::new() {
-                    Ok(c) => {
-                        info!("using Alpha Vantage as quote provider");
-                        Some(Arc::new(c))
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "Alpha Vantage init failed, falling back to Yahoo");
-                        match yahoo_provider::YahooClient::new() {
-                            Ok(c) => Some(Arc::new(c)),
-                            Err(e2) => {
-                                warn!(error = %e2, "Yahoo Finance session also failed");
-                                None
-                            }
+        let client: Option<Arc<dyn QuoteProvider>> = if prefs.data_vendors.quotes == "alphavantage"
+        {
+            // Try Alpha Vantage first, fall back to Yahoo.
+            match alphavantage::AlphaVantageClient::new() {
+                Ok(c) => {
+                    info!("using Alpha Vantage as quote provider");
+                    Some(Arc::new(c))
+                }
+                Err(e) => {
+                    warn!(error = %e, "Alpha Vantage init failed, falling back to Yahoo");
+                    match yahoo_provider::YahooClient::new() {
+                        Ok(c) => Some(Arc::new(c)),
+                        Err(e2) => {
+                            warn!(error = %e2, "Yahoo Finance session also failed");
+                            None
                         }
                     }
                 }
-            } else {
-                match yahoo_provider::YahooClient::new() {
-                    Ok(c) => Some(Arc::new(c)),
-                    Err(e) => {
-                        warn!(error = %e, "Yahoo Finance session failed");
-                        None
-                    }
+            }
+        } else {
+            match yahoo_provider::YahooClient::new() {
+                Ok(c) => Some(Arc::new(c)),
+                Err(e) => {
+                    warn!(error = %e, "Yahoo Finance session failed");
+                    None
                 }
-            };
+            }
+        };
 
         let worker = client.map(Worker::new);
 
@@ -561,10 +561,7 @@ impl App {
             .find(|q| q.symbol == ticker)
             .or_else(|| self.scanner_quotes.iter().find(|q| q.symbol == ticker));
 
-        let screener = self
-            .screener_results
-            .iter()
-            .find(|r| r.ticker == ticker);
+        let screener = self.screener_results.iter().find(|r| r.ticker == ticker);
 
         let qc = if self.qc_labels.is_empty() {
             None
@@ -585,11 +582,7 @@ impl App {
             insider_ownership_pct: self.insider_ownership.get(ticker).copied(),
             sector_heat: self
                 .sector_heat
-                .get(
-                    quote
-                        .and_then(|q| q.sector.as_deref())
-                        .unwrap_or_default(),
-                )
+                .get(quote.and_then(|q| q.sector.as_deref()).unwrap_or_default())
                 .copied(),
             past_beats: self.past_beats.get(ticker).copied(),
             qc_score: qc,
@@ -1114,13 +1107,10 @@ impl App {
                 .find(|q| q.symbol == ticker)
                 .or_else(|| self.scanner_quotes.iter().find(|q| q.symbol == ticker));
 
-            let screener = self
-                .screener_results
-                .iter()
-                .find(|r| r.ticker == ticker);
+            let screener = self.screener_results.iter().find(|r| r.ticker == ticker);
 
             let analysis = self.analyze_stock(&ticker);
-            
+
             // Reconstruct the full QC state array properly
             let qc_state_vec = self.qc_state.get(&ticker);
 
@@ -1332,7 +1322,10 @@ impl App {
             }
 
             // Export markdown report
-            KeyCode::Char('e') if self.view_mode == ViewMode::Watchlist || self.view_mode == ViewMode::QualityControl => {
+            KeyCode::Char('e')
+                if self.view_mode == ViewMode::Watchlist
+                    || self.view_mode == ViewMode::QualityControl =>
+            {
                 self.export_report();
             }
 

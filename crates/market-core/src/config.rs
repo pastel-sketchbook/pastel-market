@@ -302,7 +302,7 @@ pub fn view_mode_to_string(mode: ViewMode) -> String {
 pub fn view_mode_from_string(s: &str) -> ViewMode {
     match s {
         "Scanner" => ViewMode::Scanner,
-        "Quality Control" => ViewMode::QualityControl,
+        "QC Screener" | "Quality Control" => ViewMode::QualityControl,
         _ => ViewMode::Watchlist,
     }
 }
@@ -321,6 +321,7 @@ mod tests {
     fn preferences_roundtrip_toml() {
         let prefs = Preferences {
             theme: "Dracula".to_string(),
+            data_vendors: DataVendors::default(),
         };
         let toml_str = toml::to_string_pretty(&prefs).expect("serialize");
         let parsed: Preferences = toml::from_str(&toml_str).expect("deserialize");

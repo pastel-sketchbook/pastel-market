@@ -77,23 +77,25 @@ impl DecisionEntry {
             return; // Prevent division by zero
         }
 
-        let mut return_pct = ((current_price - self.price_at_decision) / self.price_at_decision) * 100.0;
-        
+        let mut return_pct =
+            ((current_price - self.price_at_decision) / self.price_at_decision) * 100.0;
+
         // Reverse return if it was a Sell decision (short proxy)
         if self.action == Action::Sell {
             return_pct = -return_pct;
         }
 
-        let alpha_vs_spy = if let (Some(spy_entry), Some(spy_current)) = (self.spy_at_decision, current_spy) {
-            if spy_entry > 0.0 {
-                let spy_return = ((spy_current - spy_entry) / spy_entry) * 100.0;
-                Some(return_pct - spy_return)
+        let alpha_vs_spy =
+            if let (Some(spy_entry), Some(spy_current)) = (self.spy_at_decision, current_spy) {
+                if spy_entry > 0.0 {
+                    let spy_return = ((spy_current - spy_entry) / spy_entry) * 100.0;
+                    Some(return_pct - spy_return)
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
 
         self.resolution = Some(Resolution {
             price_at_check: current_price,
@@ -134,7 +136,8 @@ impl DecisionLog {
             fs::create_dir_all(parent).context("Failed to create config directory")?;
         }
 
-        let json = serde_json::to_string_pretty(self).context("Failed to serialize decision log")?;
+        let json =
+            serde_json::to_string_pretty(self).context("Failed to serialize decision log")?;
         fs::write(&path, json).context("Failed to write decision log to disk")?;
         Ok(())
     }

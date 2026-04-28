@@ -42,27 +42,40 @@ pub fn generate_markdown(data: &ReportData<'_>) -> String {
         .or_else(|| data.screener.map(|s| s.company.as_str()))
         .unwrap_or(&data.ticker);
 
-    let price = data
-        .quote
-        .map_or(0.0, |q| q.regular_market_price);
+    let price = data.quote.map_or(0.0, |q| q.regular_market_price);
 
     md.push_str(&format!("# {} ({})\n\n", company_name, data.ticker));
     md.push_str(&format!("**Generated:** {}\n", date));
     md.push_str(&format!("**Current Price:** ${:.2}\n", price));
-    md.push_str(&format!("**Overall Rating:** {} (Score: {})\n\n", data.analysis.rating, data.analysis.composite));
-    
+    md.push_str(&format!(
+        "**Overall Rating:** {} (Score: {})\n\n",
+        data.analysis.rating, data.analysis.composite
+    ));
+
     md.push_str("---\n\n");
 
     // Analyst Scores
     md.push_str("## 📊 Analyst Pipeline Scores\n\n");
-    md.push_str(&format!("- **Fundamentals:** {}/100\n", data.analysis.fundamentals));
-    md.push_str(&format!("- **Technical:** {}/100\n", data.analysis.technical));
-    md.push_str(&format!("- **Sentiment:** {}/100\n", data.analysis.sentiment));
-    md.push_str(&format!("- **Catalyst:** {}/100\n\n", data.analysis.news_catalyst));
+    md.push_str(&format!(
+        "- **Fundamentals:** {}/100\n",
+        data.analysis.fundamentals
+    ));
+    md.push_str(&format!(
+        "- **Technical:** {}/100\n",
+        data.analysis.technical
+    ));
+    md.push_str(&format!(
+        "- **Sentiment:** {}/100\n",
+        data.analysis.sentiment
+    ));
+    md.push_str(&format!(
+        "- **Catalyst:** {}/100\n\n",
+        data.analysis.news_catalyst
+    ));
 
     // Thesis (Bull / Bear)
     md.push_str("## ⚖️ Investment Thesis\n\n");
-    
+
     md.push_str("### 🟢 Bull Signals\n");
     if data.analysis.bull_signals.is_empty() {
         md.push_str("- *No strong bull signals detected.*\n");
@@ -109,7 +122,12 @@ pub fn generate_markdown(data: &ReportData<'_>) -> String {
     if !data.news.is_empty() {
         md.push_str("## 📰 Recent Headlines\n\n");
         for (i, item) in data.news.iter().take(5).enumerate() {
-            md.push_str(&format!("{}. **{}** — {}\n", i + 1, item.title, item.publisher));
+            md.push_str(&format!(
+                "{}. **{}** — {}\n",
+                i + 1,
+                item.title,
+                item.publisher
+            ));
         }
         md.push_str("\n");
     }
@@ -120,7 +138,7 @@ pub fn generate_markdown(data: &ReportData<'_>) -> String {
 /// Export a markdown report for a stock to disk.
 pub fn export_report(data: &ReportData<'_>) -> Result<PathBuf> {
     let markdown = generate_markdown(data);
-    
+
     let mut dir = crate::config::app_dir();
     dir.push("reports");
 
@@ -130,7 +148,7 @@ pub fn export_report(data: &ReportData<'_>) -> Result<PathBuf> {
 
     let date = Utc::now().format("%Y-%m-%d").to_string();
     let filename = format!("{}_{}.md", data.ticker, date);
-    
+
     let mut path = dir;
     path.push(filename);
 

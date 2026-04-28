@@ -40,7 +40,7 @@ impl PortfolioRisk {
         for quote in quotes {
             // Find corresponding screener data
             let sr = screener_data.iter().find(|s| s.ticker == quote.symbol);
-            
+
             if let Some(s) = sr {
                 if let Ok(beta) = s.beta.parse::<f64>() {
                     total_beta += beta;

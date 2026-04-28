@@ -228,21 +228,53 @@ fn score_technical(input: &AnalysisInput<'_>) -> u8 {
 ///
 /// Looks at positive/negative keyword ratios in news titles.
 #[must_use]
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 fn score_sentiment(input: &AnalysisInput<'_>) -> u8 {
     if input.news.is_empty() {
         return 50;
     }
 
     const POSITIVE: &[&str] = &[
-        "surge", "soar", "beat", "record", "upgrade", "strong", "growth",
-        "rally", "gain", "profit", "boost", "outperform", "bullish", "buy",
-        "positive", "optimis", "upgrad",
+        "surge",
+        "soar",
+        "beat",
+        "record",
+        "upgrade",
+        "strong",
+        "growth",
+        "rally",
+        "gain",
+        "profit",
+        "boost",
+        "outperform",
+        "bullish",
+        "buy",
+        "positive",
+        "optimis",
+        "upgrad",
     ];
     const NEGATIVE: &[&str] = &[
-        "drop", "fall", "miss", "cut", "downgrade", "weak", "decline",
-        "crash", "loss", "risk", "warning", "bearish", "sell", "concern",
-        "negative", "pessimis", "downgr",
+        "drop",
+        "fall",
+        "miss",
+        "cut",
+        "downgrade",
+        "weak",
+        "decline",
+        "crash",
+        "loss",
+        "risk",
+        "warning",
+        "bearish",
+        "sell",
+        "concern",
+        "negative",
+        "pessimis",
+        "downgr",
     ];
 
     let mut pos = 0_u32;
@@ -277,7 +309,11 @@ fn score_sentiment(input: &AnalysisInput<'_>) -> u8 {
 ///
 /// More recent headlines and higher headline counts → higher catalyst score.
 #[must_use]
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 fn score_news_catalyst(input: &AnalysisInput<'_>) -> u8 {
     if input.news.is_empty() {
         return 30; // no news = slightly negative (no catalyst)
@@ -297,19 +333,19 @@ fn score_news_catalyst(input: &AnalysisInput<'_>) -> u8 {
 
     // Recency: check if any headline is within the last 24 hours.
     let now = chrono::Utc::now().timestamp();
-    let has_recent = input.news.iter().any(|n| {
-        n.publish_time
-            .is_some_and(|ts| (now - ts) < 86_400)
-    });
+    let has_recent = input
+        .news
+        .iter()
+        .any(|n| n.publish_time.is_some_and(|ts| (now - ts) < 86_400));
     if has_recent {
         score += 20.0;
     }
 
     // Very recent (last 2 hours) is even better.
-    let has_very_recent = input.news.iter().any(|n| {
-        n.publish_time
-            .is_some_and(|ts| (now - ts) < 7_200)
-    });
+    let has_very_recent = input
+        .news
+        .iter()
+        .any(|n| n.publish_time.is_some_and(|ts| (now - ts) < 7_200));
     if has_very_recent {
         score += 10.0;
     }
@@ -392,9 +428,7 @@ fn derive_bear_signals(input: &AnalysisInput<'_>) -> Vec<Signal> {
                 q.regular_market_change_percent
             )));
         }
-        if q.fifty_two_week_high > 0.0
-            && q.regular_market_price >= q.fifty_two_week_high * 0.95
-        {
+        if q.fifty_two_week_high > 0.0 && q.regular_market_price >= q.fifty_two_week_high * 0.95 {
             signals.push(Signal::new("Near 52-week high (limited upside)"));
         }
         if q.regular_market_volume < 200_000 {

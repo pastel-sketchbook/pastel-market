@@ -6,9 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 
 use crate::app::App;
-use market_core::domain::{
-    FilterMode, Quote, QuoteRank, Rating, SortMode, rank_by_change,
-};
+use market_core::domain::{FilterMode, Quote, QuoteRank, Rating, SortMode, rank_by_change};
 use market_core::theme::Theme;
 
 use super::helpers::{

@@ -62,8 +62,11 @@ pub fn draw_journal(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
                     Action::Sell => theme.loss,
                     Action::Hold => theme.muted,
                 };
-                let action_cell = Cell::from(entry.action.to_string())
-                    .style(Style::default().fg(action_color).add_modifier(Modifier::BOLD));
+                let action_cell = Cell::from(entry.action.to_string()).style(
+                    Style::default()
+                        .fg(action_color)
+                        .add_modifier(Modifier::BOLD),
+                );
 
                 let (cr, cg, cb) = entry.rating.color_rgb();
                 let rating_cell = Cell::from(entry.rating.label().to_string()).style(
@@ -76,11 +79,14 @@ pub fn draw_journal(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 
                 let (current_price, return_str, return_color, alpha_str) =
                     if let Some(res) = &entry.resolution {
-                        let ret_color = if res.return_pct >= 0.0 { theme.gain } else { theme.loss };
-                        let alpha = res.alpha_vs_spy.map_or_else(
-                            || "--".to_string(),
-                            |a| format!("{a:+.2}%"),
-                        );
+                        let ret_color = if res.return_pct >= 0.0 {
+                            theme.gain
+                        } else {
+                            theme.loss
+                        };
+                        let alpha = res
+                            .alpha_vs_spy
+                            .map_or_else(|| "--".to_string(), |a| format!("{a:+.2}%"));
                         (
                             format!("{:.2}", res.price_at_check),
                             format!("{:+.2}%", res.return_pct),
@@ -98,7 +104,8 @@ pub fn draw_journal(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 
                 Row::new(vec![
                     Cell::from(date_str),
-                    Cell::from(entry.ticker.clone()).style(Style::default().add_modifier(Modifier::BOLD)),
+                    Cell::from(entry.ticker.clone())
+                        .style(Style::default().add_modifier(Modifier::BOLD)),
                     action_cell,
                     rating_cell,
                     Cell::from(entry_price),
@@ -121,7 +128,10 @@ pub fn draw_journal(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme.border))
-                .title(format!(" Decision Journal [{}] ", app.decisions.entries.len()))
+                .title(format!(
+                    " Decision Journal [{}] ",
+                    app.decisions.entries.len()
+                ))
                 .title_style(title_style),
         )
         .row_highlight_style(highlight_style(theme));

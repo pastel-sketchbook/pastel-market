@@ -174,8 +174,18 @@ pub fn draw_header(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     ));
 
     // Decision badge
-    let pending = app.decisions.entries.iter().filter(|e| e.resolution.is_none()).count();
-    let resolved = app.decisions.entries.iter().filter(|e| e.resolution.is_some()).count();
+    let pending = app
+        .decisions
+        .entries
+        .iter()
+        .filter(|e| e.resolution.is_none())
+        .count();
+    let resolved = app
+        .decisions
+        .entries
+        .iter()
+        .filter(|e| e.resolution.is_some())
+        .count();
     if pending > 0 || resolved > 0 {
         left_spans.push(Span::styled(
             format!(" [{pending} pending / {resolved} resolved] "),

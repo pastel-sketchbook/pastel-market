@@ -59,7 +59,9 @@ impl AlphaVantageClient {
 
 impl QuoteProvider for AlphaVantageClient {
     fn fetch_quotes(&self, _symbols: &[String]) -> Result<Vec<Option<Quote>>> {
-        bail!("Alpha Vantage quote provider not yet implemented (API key present but fetch_quotes pending)")
+        bail!(
+            "Alpha Vantage quote provider not yet implemented (API key present but fetch_quotes pending)"
+        )
     }
 
     fn fetch_sparkline(&self, _symbol: &str, _range: ChartRange) -> Result<Vec<PricePoint>> {

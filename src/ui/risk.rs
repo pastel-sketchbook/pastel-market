@@ -24,7 +24,12 @@ pub fn draw_risk_panel(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) 
     }
 
     let risk = PortfolioRisk::compute(
-        &app.watchlist.quotes().iter().flatten().cloned().collect::<Vec<_>>(),
+        &app.watchlist
+            .quotes()
+            .iter()
+            .flatten()
+            .cloned()
+            .collect::<Vec<_>>(),
         &app.screener_results,
         &iv_data,
     );
@@ -122,7 +127,10 @@ pub fn draw_risk_panel(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) 
     let mut sectors: Vec<_> = risk.sector_concentration.into_iter().collect();
     sectors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    let mut sector_lines = vec![Line::from(Span::styled("Top Sectors:", Style::default().add_modifier(Modifier::BOLD)))];
+    let mut sector_lines = vec![Line::from(Span::styled(
+        "Top Sectors:",
+        Style::default().add_modifier(Modifier::BOLD),
+    ))];
     for (sec, pct) in sectors.into_iter().take(3) {
         if sec != "-" {
             sector_lines.push(Line::from(format!("  {sec} - {pct:.0}%")));
@@ -130,6 +138,9 @@ pub fn draw_risk_panel(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) 
     }
 
     if chunks[4].height > 0 {
-        frame.render_widget(Paragraph::new(sector_lines).style(Style::default().fg(theme.fg)), chunks[4]);
+        frame.render_widget(
+            Paragraph::new(sector_lines).style(Style::default().fg(theme.fg)),
+            chunks[4],
+        );
     }
 }

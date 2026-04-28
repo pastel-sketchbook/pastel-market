@@ -1,6 +1,10 @@
 //! Technical indicators computing module.
 
-#![allow(clippy::cast_precision_loss, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
+)]
 
 /// Result of MACD computation.
 #[derive(Debug, Clone, Default)]
@@ -18,7 +22,7 @@ pub fn compute_sma(prices: &[f64], period: usize) -> Vec<f64> {
     }
 
     let mut result = Vec::with_capacity(prices.len());
-    
+
     // Fill initial uncomputable values with NaN or 0 (using 0.0 for simplicity in charts)
     for _ in 0..period - 1 {
         result.push(f64::NAN);
@@ -89,8 +93,16 @@ pub fn compute_rsi(prices: &[f64], period: usize) -> Vec<f64> {
     avg_gain /= period as f64;
     avg_loss /= period as f64;
 
-    let initial_rs = if avg_loss == 0.0 { f64::MAX } else { avg_gain / avg_loss };
-    let initial_rsi = if avg_loss == 0.0 { 100.0 } else { 100.0 - (100.0 / (1.0 + initial_rs)) };
+    let initial_rs = if avg_loss == 0.0 {
+        f64::MAX
+    } else {
+        avg_gain / avg_loss
+    };
+    let initial_rsi = if avg_loss == 0.0 {
+        100.0
+    } else {
+        100.0 - (100.0 / (1.0 + initial_rs))
+    };
     result.push(initial_rsi);
 
     for i in period + 1..prices.len() {
@@ -101,8 +113,16 @@ pub fn compute_rsi(prices: &[f64], period: usize) -> Vec<f64> {
         avg_gain = (avg_gain * (period as f64 - 1.0) + gain) / period as f64;
         avg_loss = (avg_loss * (period as f64 - 1.0) + loss) / period as f64;
 
-        let rs = if avg_loss == 0.0 { f64::MAX } else { avg_gain / avg_loss };
-        let rsi = if avg_loss == 0.0 { 100.0 } else { 100.0 - (100.0 / (1.0 + rs)) };
+        let rs = if avg_loss == 0.0 {
+            f64::MAX
+        } else {
+            avg_gain / avg_loss
+        };
+        let rsi = if avg_loss == 0.0 {
+            100.0
+        } else {
+            100.0 - (100.0 / (1.0 + rs))
+        };
         result.push(rsi);
     }
 
@@ -130,14 +150,14 @@ pub fn compute_macd(prices: &[f64]) -> MacdResult {
 
     // To compute signal line (EMA of MACD line), we need to extract the valid part
     let valid_start = slow_period - 1; // Since slow_period > fast_period
-    
+
     let mut signal_line = vec![f64::NAN; prices.len()];
     let mut histogram = vec![f64::NAN; prices.len()];
 
     if prices.len() > valid_start + signal_period {
         let valid_macd = &macd_line[valid_start..];
         let valid_signal = compute_ema(valid_macd, signal_period);
-        
+
         for i in valid_start..prices.len() {
             signal_line[i] = valid_signal[i - valid_start];
             if !macd_line[i].is_nan() && !signal_line[i].is_nan() {

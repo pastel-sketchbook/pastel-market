@@ -149,8 +149,7 @@ fn draw_chart_section(frame: &mut Frame, app: &App, theme: &'static Theme, area:
         // Split chart area for indicators.
         let has_rsi = app.chart_show_rsi;
         let has_macd = app.chart_show_macd;
-        let sub_chart_count =
-            1 + u16::from(has_rsi) + u16::from(has_macd);
+        let sub_chart_count = 1 + u16::from(has_rsi) + u16::from(has_macd);
 
         let chart_constraints: Vec<Constraint> = if sub_chart_count == 1 {
             vec![Constraint::Percentage(100)]
@@ -163,7 +162,10 @@ fn draw_chart_section(frame: &mut Frame, app: &App, theme: &'static Theme, area:
                 // One constraint per sub-chart.
             ]
             .into_iter()
-            .chain(std::iter::repeat_n(Constraint::Length(sub_height), subs as usize))
+            .chain(std::iter::repeat_n(
+                Constraint::Length(sub_height),
+                subs as usize,
+            ))
             .collect()
         };
 
@@ -206,11 +208,32 @@ fn build_help_spans(app: &App, theme: &'static Theme) -> Vec<Span<'static>> {
             Span::styled(" range  ", Style::default().fg(theme.muted)),
             Span::styled("←/→", Style::default().fg(theme.accent)),
             Span::styled(" prev/next  ", Style::default().fg(theme.muted)),
-            Span::styled("v", Style::default().fg(if app.chart_show_sma { theme.accent } else { theme.muted })),
+            Span::styled(
+                "v",
+                Style::default().fg(if app.chart_show_sma {
+                    theme.accent
+                } else {
+                    theme.muted
+                }),
+            ),
             Span::styled(" SMA  ", Style::default().fg(theme.muted)),
-            Span::styled("i", Style::default().fg(if app.chart_show_rsi { theme.accent } else { theme.muted })),
+            Span::styled(
+                "i",
+                Style::default().fg(if app.chart_show_rsi {
+                    theme.accent
+                } else {
+                    theme.muted
+                }),
+            ),
             Span::styled(" RSI  ", Style::default().fg(theme.muted)),
-            Span::styled("m", Style::default().fg(if app.chart_show_macd { theme.accent } else { theme.muted })),
+            Span::styled(
+                "m",
+                Style::default().fg(if app.chart_show_macd {
+                    theme.accent
+                } else {
+                    theme.muted
+                }),
+            ),
             Span::styled(" MACD  ", Style::default().fg(theme.muted)),
         ]);
     } else {
@@ -287,27 +310,21 @@ fn draw_thesis_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: 
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.gain))
         .title(" Bull Signals ")
-        .title_style(
-            Style::default()
-                .fg(theme.gain)
-                .add_modifier(Modifier::BOLD),
-        )
+        .title_style(Style::default().fg(theme.gain).add_modifier(Modifier::BOLD))
         .style(Style::default().bg(theme.chart_bg));
 
     let bear_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.loss))
         .title(" Bear Signals ")
-        .title_style(
-            Style::default()
-                .fg(theme.loss)
-                .add_modifier(Modifier::BOLD),
-        )
+        .title_style(Style::default().fg(theme.loss).add_modifier(Modifier::BOLD))
         .style(Style::default().bg(theme.chart_bg));
 
     let bull_items: Vec<ratatui::widgets::ListItem> = if report.bull_signals.is_empty() {
-        vec![ratatui::widgets::ListItem::new("No strong bull signals detected.")
-            .style(Style::default().fg(theme.muted))]
+        vec![
+            ratatui::widgets::ListItem::new("No strong bull signals detected.")
+                .style(Style::default().fg(theme.muted)),
+        ]
     } else {
         report
             .bull_signals
@@ -320,8 +337,10 @@ fn draw_thesis_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: 
     };
 
     let bear_items: Vec<ratatui::widgets::ListItem> = if report.bear_signals.is_empty() {
-        vec![ratatui::widgets::ListItem::new("No strong bear signals detected.")
-            .style(Style::default().fg(theme.muted))]
+        vec![
+            ratatui::widgets::ListItem::new("No strong bear signals detected.")
+                .style(Style::default().fg(theme.muted)),
+        ]
     } else {
         report
             .bear_signals
@@ -333,8 +352,14 @@ fn draw_thesis_panel(frame: &mut Frame, app: &App, theme: &'static Theme, area: 
             .collect()
     };
 
-    frame.render_widget(ratatui::widgets::List::new(bull_items).block(bull_block), layout[0]);
-    frame.render_widget(ratatui::widgets::List::new(bear_items).block(bear_block), layout[1]);
+    frame.render_widget(
+        ratatui::widgets::List::new(bull_items).block(bull_block),
+        layout[0],
+    );
+    frame.render_widget(
+        ratatui::widgets::List::new(bear_items).block(bear_block),
+        layout[1],
+    );
 }
 
 /// Draw the news headlines panel with optional inline summary.
@@ -888,7 +913,9 @@ fn draw_rsi_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Rec
             Block::default()
                 .title(Span::styled(
                     " RSI(14) ",
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(theme.border))
@@ -939,7 +966,9 @@ fn draw_macd_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
     let max_x = prices.len().saturating_sub(1) as f64;
 
     // Compute Y bounds from MACD data.
-    let all_vals: Vec<f64> = macd_data.iter().map(|(_, y)| *y)
+    let all_vals: Vec<f64> = macd_data
+        .iter()
+        .map(|(_, y)| *y)
         .chain(signal_data.iter().map(|(_, y)| *y))
         .collect();
     let min_y = all_vals.iter().copied().fold(f64::INFINITY, f64::min);
@@ -963,7 +992,9 @@ fn draw_macd_chart(frame: &mut Frame, app: &App, theme: &'static Theme, area: Re
             Block::default()
                 .title(Span::styled(
                     " MACD(12,26,9) ",
-                    Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Blue)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(theme.border))
